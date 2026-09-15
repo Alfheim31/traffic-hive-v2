@@ -42,6 +42,14 @@ class Scenario:
     label: str
     eta: float = 0.03  # HPDM softmax sharpness; see findings, eta=0.03
     reroute_period: int = 30  # seconds between routing decisions
+    # "travel_time" reproduces Stochastic User Equilibrium; "marginal" is the
+    # System Optimum rule. See RoutingController._route_cost for the
+    # derivation of why these differ by a factor of (n+1) on the BPR term.
+    cost_basis: str = "travel_time"
+    # Fairness tolerance. When set, candidate routes costing more than
+    # (1 + epsilon) times the cheapest candidate are discarded before the
+    # softmax draw. None disables the constraint.
+    epsilon: float | None = None
 
 
 SCENARIOS: dict[str, Scenario] = {
@@ -50,7 +58,18 @@ SCENARIOS: dict[str, Scenario] = {
         Scenario("fixed", "static", "shortest", "Fixed-time"),
         Scenario("actuated", "actuated", "shortest", "Actuated"),
         Scenario("ue", "actuated", "ue", "User equilibrium"),
-        Scenario("hive", "actuated", "hpdm", "Traffic Hive (HPDM)"),
+        Scenario(
+            "hive",
+            "actuated",
+            "hpdm",
+            "Traffic Hive (HPDM)",
+            cost_basis="marginal",
+            epsilon=0.25,
+        ),
+        # Ablation: HPDM without the marginal-cost correction, i.e. softmax
+        # over plain travel time. Retained to demonstrate that this
+        # degenerates to Stochastic User Equilibrium.
+        Scenario("hive_sue", "actuated", "hpdm", "HPDM (travel-time cost)"),
     ]
 }
 
@@ -238,10 +257,42 @@ def softmax_choice(costs: list[float], eta: float, rng: random.Random) -> int:
 class RoutingController:
     """Applies a routing rule to in-network vehicles each decision epoch."""
 
-    def __init__(self, scenario: Scenario, seed: int) -> None:
+    #: BPR calibration constant. Standard US Bureau of Public Roads value;
+    #: see the calibration note in the README for fitting this from SUMO.
+    BETA = 0.15
+    #: BPR exponent.
+    BPR_N = 4
+    #: Effective vehicles per metre of lane at practical capacity. A jam
+    #: density of roughly one vehicle per 7 m at 40 percent occupancy.
+    VEH_PER_M = 0.4 / 7.0
+
+    def __init__(self, scenario: Scenario, seed: int, net_path: Path) -> None:
         self.scenario = scenario
         self.rng = random.Random(seed + 7919)
         self._assigned: set[str] = set()
+        self._t0: dict[str, float] = {}
+        self._cap: dict[str, float] = {}
+        self._load_bpr_parameters(net_path)
+
+    def _load_bpr_parameters(self, net_path: Path) -> None:
+        """Precompute per-edge free-flow time and effective capacity.
+
+        Both are read once from the network rather than queried per decision:
+        free-flow time is length over speed limit, and effective capacity is
+        lane count times length times practical density. Computing these on
+        every routing epoch would dominate the controller's cost without
+        changing the values.
+        """
+        import sumolib
+
+        net = sumolib.net.readNet(str(net_path))
+        for edge in net.getEdges():
+            eid = edge.getID()
+            speed = max(edge.getSpeed(), 1.0)
+            length = max(edge.getLength(), 1.0)
+            lanes = max(len(edge.getLanes()), 1)
+            self._t0[eid] = length / speed
+            self._cap[eid] = max(lanes * length * self.VEH_PER_M, 1.0)
 
     def step(self, traci, t: int) -> None:
         mode = self.scenario.routing
@@ -281,6 +332,21 @@ class RoutingController:
             return
 
         costs = [self._route_cost(traci, r) for r in candidates]
+
+        # Fairness constraint. Penalising the spread of travel times has a
+        # degenerate minimiser — concentrating all demand on one corridor
+        # gives every vehicle an identical, uniformly poor time and so zero
+        # variance. Constraining the feasible set instead cannot be gamed
+        # that way: a concentrated allocation drives the loaded corridor
+        # past the tolerance and is excluded outright.
+        if self.scenario.epsilon is not None and costs:
+            floor = min(costs)
+            limit = floor * (1.0 + self.scenario.epsilon)
+            kept = [(r, c) for r, c in zip(candidates, costs) if c <= limit]
+            if kept:
+                candidates = [r for r, _ in kept]
+                costs = [c for _, c in kept]
+
         pick = softmax_choice(costs, self.scenario.eta, self.rng)
         try:
             traci.vehicle.setRoute(vid, candidates[pick])
@@ -320,15 +386,52 @@ class RoutingController:
                 pass
         return routes
 
-    @staticmethod
-    def _route_cost(traci, route: tuple[str, ...]) -> float:
-        """Sum of current travel times over the route's edges, in seconds."""
+    def _route_cost(self, traci, route: tuple[str, ...]) -> float:
+        """Cost of a route under the scenario's cost basis, in seconds.
+
+        Two bases are supported, and the distinction is the whole point of
+        the mechanism.
+
+        ``travel_time`` sums the travel time each edge currently exhibits.
+        A softmax over this quantity converges to Stochastic User
+        Equilibrium: every vehicle weighs only what the route costs *it*,
+        which is precisely the selfish objective the study aims to improve
+        upon. Retained as an ablation.
+
+        ``marginal`` sums the marginal social cost instead. For the BPR
+        function
+
+            T(N) = T0 [ 1 + beta (N/C)^n ]
+
+        total edge cost is Z(N) = N T(N) = T0 N + beta T0 N^(n+1) / C^n, and
+        so
+
+            MC(N) = dZ/dN = T0 [ 1 + (n+1) beta (N/C)^n ]
+
+        The congestion coefficient is multiplied by (n+1) — with n = 4, beta
+        rises from 0.15 to 0.75. That surplus is the externality each
+        additional vehicle imposes on those already on the edge. Assigning
+        on this quantity internalises the externality, which is the standard
+        realisation of Wardrop's second principle and yields System Optimum
+        rather than User Equilibrium.
+        """
         total = 0.0
+        marginal = self.scenario.cost_basis == "marginal"
         for edge in route:
             if edge.startswith(":"):
                 continue
             try:
-                total += traci.edge.getTraveltime(edge)
+                if not marginal:
+                    total += traci.edge.getTraveltime(edge)
+                    continue
+                load = traci.edge.getLastStepVehicleNumber(edge)
+                t0 = self._t0.get(edge)
+                cap = self._cap.get(edge)
+                if t0 is None or cap is None:
+                    total += traci.edge.getTraveltime(edge)
+                    continue
+                ratio = load / cap
+                total += t0 * (1.0 + (self.BPR_N + 1) * self.BETA * ratio ** self.BPR_N)
             except traci.TraCIException:
                 continue
         return total
@@ -397,7 +500,7 @@ def run(
     else:
         print(f"[{scenario.name}] running headless with {scenario.routing} controller")
         traci.start(cmd)
-        controller = RoutingController(scenario, seed)
+        controller = RoutingController(scenario, seed, net_path)
         step = 0
         try:
             while traci.simulation.getMinExpectedNumber() > 0:
