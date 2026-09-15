@@ -92,15 +92,53 @@ def generate_demand(
         """Triangular profile peaking at 40% through the horizon."""
         return min(horizon - 1, max(0.0, rng.triangular(0, horizon, horizon * 0.4)))
 
+    # Real OSM extracts are not strongly connected: one-way streets, clipped
+    # boundaries and stranded fragments mean many origin-destination pairs
+    # have no legal path. Validate each pair before writing it, and cache the
+    # verdict so the routing cost stays proportional to the number of distinct
+    # pairs rather than the number of vehicles.
+    routable: dict[tuple[str, str], bool] = {}
+
+    def is_routable(src, dst) -> bool:
+        key = (src.getID(), dst.getID())
+        cached = routable.get(key)
+        if cached is not None:
+            return cached
+        try:
+            path, cost = net.getShortestPath(src, dst, vClass="passenger")
+            ok = path is not None and cost < 1e9
+        except Exception:
+            ok = False
+        routable[key] = ok
+        return ok
+
     trips: list[tuple[float, str, str]] = []
+    rejected = 0
     for _ in range(n_vehicles):
-        src = rng.choice(sources)
-        dst = rng.choice(sinks)
-        tries = 0
-        while dst.getID() == src.getID() and tries < 10:
+        for _attempt in range(40):
+            src = rng.choice(sources)
             dst = rng.choice(sinks)
-            tries += 1
-        trips.append((peaked_depart(), src.getID(), dst.getID()))
+            if dst.getID() == src.getID():
+                continue
+            if is_routable(src, dst):
+                trips.append((peaked_depart(), src.getID(), dst.getID()))
+                break
+            rejected += 1
+        else:
+            continue
+
+    if not trips:
+        raise SystemExit(
+            "No routable origin-destination pairs found. The network is likely "
+            "fragmented — inspect it with netedit, or re-clip the OSM extract "
+            "to a contiguous area."
+        )
+
+    if len(trips) < n_vehicles:
+        print(
+            f"  warning: only {len(trips)} of {n_vehicles} trips were routable "
+            f"({rejected} pairs rejected). The network may be fragmented."
+        )
 
     trips.sort(key=lambda t: t[0])
 
@@ -340,6 +378,9 @@ def run(
         "--summary-output", str(paths["summary"]),
         "--seed", str(seed),
         "--time-to-teleport", "300",
+        # A single unroutable trip should degrade the run, not abort it.
+        # Rejected vehicles are reported in the run summary.
+        "--ignore-route-errors",
         "--no-step-log",
         "--no-warnings",
         "--duration-log.statistics",

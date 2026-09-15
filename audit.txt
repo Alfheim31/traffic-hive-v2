@@ -1,0 +1,11 @@
+
+Network audit
+----------------------------------
+edges                      13,897
+junctions                   1,004
+traffic_lights                 41
+pedestrian_lanes            7,759
+crossings                   1,521
+elevated_edges              1,208
+----------------------------------
+WARNING: network is large for a corridor study. Clip the boundary.

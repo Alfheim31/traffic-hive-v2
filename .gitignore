@@ -7,3 +7,4 @@ data/out/
 app/node_modules/
 app/assets/sim/*.bin
 .DS_Store
+data/cache/
