@@ -38,6 +38,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
+import numpy as np
+
+from pipeline import theory
+
 NET = Path("data/net/corridor.net.xml")
 OUT = Path("data/out")
 APP_ASSETS = Path("app/assets/sim")
@@ -297,16 +301,49 @@ def compute_metrics(tripinfo_path: Path, summary_path: Path) -> dict:
     series_t: list[float] = []
     series_running: list[int] = []
     series_halting: list[int] = []
+    inserted_total = 0
+    ended_total = 0
     for _, elem in ET.iterparse(str(summary_path), events=("end",)):
         if elem.tag != "step":
             continue
         series_t.append(float(elem.get("time", 0)))
         series_running.append(int(elem.get("running", 0)))
         series_halting.append(int(elem.get("halting", 0)))
+        inserted_total = max(inserted_total, int(elem.get("inserted", 0)))
+        ended_total = max(ended_total, int(elem.get("ended", 0)))
         elem.clear()
+
+    # Completion accounting.
+    #
+    # Trip-level averages are computed over vehicles that finished. If one
+    # scenario strands more vehicles than another, its slowest trips are
+    # silently excluded and its averages look better than they are — a
+    # survivorship bias that can invert the apparent ranking. Recording the
+    # completion rate makes that visible instead of letting it hide inside
+    # a mean.
+    stranded = max(0, inserted_total - ended_total)
+    completion_rate = (
+        float(ended_total) / inserted_total if inserted_total else 1.0
+    )
 
     n = max(1, len(durations))
     mean = lambda xs: sum(xs) / max(1, len(xs))
+
+    # Synchronisation and fairness. The manuscript's synchronisation term is
+    # the variance of arrival times; it is reported here as a measured
+    # quantity so its behaviour can be inspected directly rather than
+    # inferred. The fairness ratio is the complementary view: how much worse
+    # the unluckiest decile fares than the median, which is what the
+    # constrained formulation bounds and what variance alone cannot express.
+    dur = np.array(durations, dtype=float) if durations else np.array([0.0])
+    duration_std = float(np.std(dur))
+    p50 = float(np.percentile(dur, 50))
+    p90 = float(np.percentile(dur, 90))
+    p95 = float(np.percentile(dur, 95))
+    fairness_ratio = float(p90 / p50) if p50 > 0 else 1.0
+    # Coefficient of variation is scale-free, so it can be compared across
+    # runs of different durations in a way that raw variance cannot.
+    cv = float(duration_std / np.mean(dur)) if float(np.mean(dur)) > 0 else 0.0
 
     # Downsample the time series to at most 120 points for charting.
     stride = max(1, len(series_t) // 120)
@@ -316,6 +353,16 @@ def compute_metrics(tripinfo_path: Path, summary_path: Path) -> dict:
 
     return {
         "completed_trips": len(durations),
+        "inserted": inserted_total,
+        "stranded": stranded,
+        "completion_rate": round(completion_rate, 4),
+        "duration_std_s": round(duration_std, 3),
+        "duration_p50_s": round(p50, 2),
+        "duration_p90_s": round(p90, 2),
+        "duration_p95_s": round(p95, 2),
+        "arrival_variance": round(duration_std**2, 3),
+        "fairness_ratio_p90_p50": round(fairness_ratio, 4),
+        "coefficient_of_variation": round(cv, 5),
         "avg_duration_s": round(mean(durations), 2),
         "avg_time_loss_s": round(mean(time_loss), 2),
         "avg_waiting_s": round(mean(waits), 2),
@@ -337,6 +384,7 @@ def compare(metrics: dict[str, dict], baseline: str = "ue") -> dict:
         baseline = next(iter(metrics))
     base = metrics[baseline]
     out: dict[str, dict] = {}
+    base_rate = base.get("completion_rate", 1.0)
     for name, m in metrics.items():
         def pct(key: str) -> float:
             b = base[key]
@@ -349,6 +397,16 @@ def compare(metrics: dict[str, dict], baseline: str = "ue") -> dict:
             "time_loss_reduction_pct": pct("avg_time_loss_s"),
             "waiting_reduction_pct": pct("avg_waiting_s"),
             "duration_reduction_pct": pct("avg_duration_s"),
+            "spread_reduction_pct": pct("duration_std_s"),
+            "fairness_improvement_pct": pct("fairness_ratio_p90_p50"),
+            # True when both scenarios cleared a comparable share of their
+            # demand. When false, the trip averages above are computed over
+            # different vehicle populations and are not directly comparable;
+            # the app surfaces this rather than hiding it.
+            "comparable": bool(
+                abs(m.get("completion_rate", 1.0) - base_rate) <= 0.02
+            ),
+            "completion_rate": m.get("completion_rate", 1.0),
             "queue_reduction_pct": (
                 round((base["peak_halting"] - m["peak_halting"])
                       / base["peak_halting"] * 100.0, 2)
@@ -401,10 +459,21 @@ def main() -> None:
         metrics[name] = compute_metrics(run_dir / "tripinfo.xml",
                                         run_dir / "summary.xml")
 
+    # Analytical reference values. These come from exhaustive enumeration
+    # over the corridor model rather than from simulation, and are carried
+    # alongside the measured results so the app can show what the measured
+    # numbers should be compared against: the unreachable System Optimum
+    # below, the selfish User Equilibrium above, and the Price of Anarchy
+    # bounding the gap between them.
+    analytical = theory.summarise(
+        theory.default_corridors(), demand=10, epsilon=0.25
+    )
+
     payload = {
         "scenarios": manifest,
         "metrics": metrics,
         "comparison": compare(metrics, args.baseline) if metrics else {},
+        "theory": analytical,
     }
     (args.assets / "metrics.json").write_text(json.dumps(payload, separators=(",", ":")))
     print(f"\nmetrics.json written "

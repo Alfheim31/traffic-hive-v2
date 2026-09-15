@@ -47,8 +47,37 @@ export interface NetworkGeometry {
   counts: { roads: number; crossings: number; lights: number };
 }
 
+export interface Allocation {
+  load: number[];
+  total_cost: number;
+  times: number[];
+  variance: number;
+  spread: number;
+  rule: string;
+}
+
+export interface TheoryBlock {
+  demand: number;
+  corridors: { names: string[]; capacity: number[]; beta: number; n: number };
+  allocations: { UE: Allocation; SO: Allocation; CSO: Allocation; SSO: Allocation };
+  price_of_anarchy: number;
+  so_improvement_pct: number;
+  cso_improvement_pct: number;
+  epsilon: number;
+}
+
 export interface ScenarioMetrics {
   completed_trips: number;
+  inserted: number;
+  stranded: number;
+  completion_rate: number;
+  duration_std_s: number;
+  duration_p50_s: number;
+  duration_p90_s: number;
+  duration_p95_s: number;
+  arrival_variance: number;
+  fairness_ratio_p90_p50: number;
+  coefficient_of_variation: number;
   avg_duration_s: number;
   avg_time_loss_s: number;
   avg_waiting_s: number;
@@ -65,6 +94,10 @@ export interface Comparison {
   waiting_reduction_pct: number;
   duration_reduction_pct: number;
   queue_reduction_pct: number;
+  spread_reduction_pct: number;
+  fairness_improvement_pct: number;
+  comparable: boolean;
+  completion_rate: number;
 }
 
 export interface MetricsPayload {
@@ -73,6 +106,7 @@ export interface MetricsPayload {
   scenarios: Record<string, { frames: number; vehicles: number; frame_dt: number; mb: number }>;
   metrics: Record<string, ScenarioMetrics>;
   comparison: Record<string, Comparison>;
+  theory?: TheoryBlock;
 }
 
 /** Decoded trajectory data for one scenario. */
@@ -279,9 +313,27 @@ export function formatClock(seconds: number): string {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-export function formatPct(value: number): string {
+/**
+ * Format a percentage, tolerating absent values.
+ *
+ * Cached runs may have been packed before a metric existed, so a field can
+ * legitimately be missing from an otherwise valid payload. Returning a dash
+ * keeps one stale cache entry from throwing during render and unmounting the
+ * whole results panel.
+ */
+export function formatPct(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "\u2014";
   const sign = value > 0 ? "+" : "";
   return `${sign}${value.toFixed(1)}%`;
+}
+
+/** Format a plain number, tolerating absent values. */
+export function formatNum(
+  value: number | null | undefined,
+  decimals = 1,
+): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "\u2014";
+  return value.toFixed(decimals);
 }
 
 // ---------------------------------------------------------------------------

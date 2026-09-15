@@ -38,6 +38,8 @@ import {
   SERVER_URL,
   NetworkGeometry,
   MetricsPayload,
+  ScenarioMetrics,
+  TheoryBlock,
   Trajectories,
   startRun,
   waitForRun,
@@ -47,6 +49,7 @@ import {
   checkHealth,
   formatClock,
   formatPct,
+  formatNum,
   frameCounts,
 } from "./src/sim";
 
@@ -608,6 +611,22 @@ export default function App() {
             Traffic Hive compared against {metrics.labels?.ue ?? "user equilibrium"}
           </Text>
 
+          {hiveComparison.comparable === false && (
+            <View style={styles.warning}>
+              <Text style={styles.warningText}>
+                Comparison not reliable. The two runs cleared different shares
+                of their demand
+                {typeof hiveComparison.completion_rate === "number"
+                  ? ` (${(hiveComparison.completion_rate * 100).toFixed(0)}% vs baseline)`
+                  : ""}
+                , so the trip averages below are taken over different vehicle
+                populations. Stranded vehicles are excluded from these means,
+                which flatters whichever run stranded more. Lengthen the
+                horizon until both clear, then compare.
+              </Text>
+            </View>
+          )}
+
           <View style={styles.cards}>
             <MetricCard
               label="Delay reduced"
@@ -636,6 +655,43 @@ export default function App() {
 
           <Text style={styles.chartTitle}>Vehicles queued over time</Text>
           <QueueChart metrics={metrics} />
+
+          <Text style={styles.sectionTitle}>Synchronisation and fairness</Text>
+          <Text style={styles.resultsSub}>
+            Arrival-time spread across vehicles, and how much worse the
+            unluckiest decile fares than the median
+          </Text>
+          <View style={styles.cards}>
+            <MetricCard
+              label="Arrival spread reduced"
+              value={formatPct(hiveComparison.spread_reduction_pct)}
+              good={hiveComparison.spread_reduction_pct > 0}
+            />
+            <MetricCard
+              label="Fairness ratio improved"
+              value={formatPct(hiveComparison.fairness_improvement_pct)}
+              good={hiveComparison.fairness_improvement_pct > 0}
+            />
+          </View>
+          <Text style={styles.chartTitle}>
+            Arrival-time standard deviation (s)
+          </Text>
+          <BarChart
+            metrics={metrics}
+            field="duration_std_s"
+            lowerIsBetter
+          />
+          <Text style={styles.chartTitle}>
+            Fairness ratio (90th percentile / median trip time)
+          </Text>
+          <BarChart
+            metrics={metrics}
+            field="fairness_ratio_p90_p50"
+            lowerIsBetter
+            decimals={2}
+          />
+
+          {metrics.theory && <TheoryPanel theory={metrics.theory} />}
         </View>
       )}
     </ScrollView>
@@ -677,11 +733,36 @@ function MetricCard({
 
 /** Horizontal bars of mean time loss, one per scenario. */
 function DelayChart({ metrics }: { metrics: MetricsPayload }) {
+  return <BarChart metrics={metrics} field="avg_time_loss_s" lowerIsBetter />;
+}
+
+/**
+ * Horizontal bars of any numeric metric, one per scenario.
+ *
+ * Bars are scaled against the largest value rather than against zero-to-max
+ * of a fixed range, so small differences stay visible; the printed value
+ * carries the absolute magnitude.
+ */
+function BarChart({
+  metrics,
+  field,
+  lowerIsBetter = true,
+  decimals = 0,
+}: {
+  metrics: MetricsPayload;
+  field: keyof ScenarioMetrics;
+  lowerIsBetter?: boolean;
+  decimals?: number;
+}) {
   const entries = Object.entries(metrics.metrics);
-  const max = Math.max(...entries.map(([, m]) => m.avg_time_loss_s), 1);
+  const values = entries.map(([, m]) => {
+    const v = Number(m[field]);
+    return Number.isFinite(v) ? v : 0;
+  });
+  const max = Math.max(...values, 1e-9);
   return (
     <View style={styles.chart}>
-      {entries.map(([name, m]) => (
+      {entries.map(([name, m], i) => (
         <View key={name} style={styles.barRow}>
           <Text style={styles.barLabel} numberOfLines={1}>
             {metrics.labels?.[name] ?? name}
@@ -691,13 +772,13 @@ function DelayChart({ metrics }: { metrics: MetricsPayload }) {
               style={[
                 styles.barFill,
                 {
-                  width: `${(m.avg_time_loss_s / max) * 100}%`,
+                  width: `${(values[i] / max) * 100}%`,
                   backgroundColor: name === "hive" ? COLORS.moving : COLORS.textDim,
                 },
               ]}
             />
           </View>
-          <Text style={styles.barValue}>{m.avg_time_loss_s.toFixed(0)}</Text>
+          <Text style={styles.barValue}>{values[i].toFixed(decimals)}</Text>
         </View>
       ))}
     </View>
@@ -713,7 +794,7 @@ function DelayChart({ metrics }: { metrics: MetricsPayload }) {
 function QueueChart({ metrics }: { metrics: MetricsPayload }) {
   const entries = Object.entries(metrics.metrics);
   const max = Math.max(
-    ...entries.flatMap(([, m]) => m.series.halting),
+    ...entries.flatMap(([, m]) => m.series?.halting ?? []),
     1,
   );
   return (
@@ -724,7 +805,7 @@ function QueueChart({ metrics }: { metrics: MetricsPayload }) {
             {metrics.labels?.[name] ?? name}
           </Text>
           <View style={styles.spark}>
-            {m.series.halting.map((v, i) => (
+            {(m.series?.halting ?? []).map((v, i) => (
               <View
                 key={i}
                 style={{
@@ -740,6 +821,103 @@ function QueueChart({ metrics }: { metrics: MetricsPayload }) {
           <Text style={styles.barValue}>{m.peak_halting}</Text>
         </View>
       ))}
+    </View>
+  );
+}
+
+/**
+ * Analytical reference values from exhaustive enumeration.
+ *
+ * These are not simulation outputs. They bound what any routing mechanism
+ * can achieve on the corridor model: System Optimum is the unreachable
+ * floor, User Equilibrium is what selfish routing produces, and the Price of
+ * Anarchy is the ratio between them. A measured result should be read
+ * against this range rather than in isolation — if the Price of Anarchy is
+ * near 1.0, there is little available to win and no method should claim
+ * much.
+ */
+function TheoryPanel({ theory }: { theory: TheoryBlock }) {
+  const { allocations, corridors } = theory;
+  const rules: Array<[string, keyof typeof allocations, string]> = [
+    ["User equilibrium", "UE", "selfish routing"],
+    ["System optimum", "SO", "total-cost floor"],
+    ["Constrained optimum", "CSO", `fairness \u03B5 = ${theory.epsilon}`],
+    ["Synchronized SO", "SSO", "variance-penalised"],
+  ];
+  const maxCost = Math.max(
+    ...rules.map(([, key]) => allocations[key].total_cost),
+    1e-9,
+  );
+
+  return (
+    <View>
+      <Text style={styles.sectionTitle}>Analytical reference</Text>
+      <Text style={styles.resultsSub}>
+        Exhaustive enumeration over {corridors.names.length} corridors at
+        demand {theory.demand}. Not simulated — these bound what any
+        mechanism can achieve.
+      </Text>
+
+      <View style={styles.cards}>
+        <MetricCard
+          label="Price of anarchy"
+          value={formatNum(theory.price_of_anarchy, 4)}
+          good={theory.price_of_anarchy > 1.001}
+        />
+        <MetricCard
+          label="SO gain over UE"
+          value={formatPct(theory.so_improvement_pct)}
+          good={theory.so_improvement_pct > 0}
+        />
+        <MetricCard
+          label="Constrained gain over UE"
+          value={formatPct(theory.cso_improvement_pct)}
+          good={theory.cso_improvement_pct > 0}
+        />
+      </View>
+
+      <Text style={styles.chartTitle}>
+        Total network travel time by allocation rule
+      </Text>
+      <View style={styles.chart}>
+        {rules.map(([label, key, note]) => {
+          const a = allocations[key];
+          return (
+            <View key={key}>
+              <View style={styles.barRow}>
+                <Text style={styles.barLabel} numberOfLines={1}>
+                  {label}
+                </Text>
+                <View style={styles.barTrack}>
+                  <View
+                    style={[
+                      styles.barFill,
+                      {
+                        width: `${(a.total_cost / maxCost) * 100}%`,
+                        backgroundColor:
+                          key === "SO" || key === "CSO"
+                            ? COLORS.moving
+                            : COLORS.textDim,
+                      },
+                    ]}
+                  />
+                </View>
+                <Text style={styles.barValue}>{formatNum(a.total_cost, 1)}</Text>
+              </View>
+              <Text style={styles.allocNote}>
+                {note} — split [{(a.load ?? []).join(", ")}], spread{" "}
+                {formatNum(a.spread, 2)}
+              </Text>
+            </View>
+          );
+        })}
+      </View>
+
+      <Text style={styles.allocFoot}>
+        Corridors: {corridors.names.join(", ")} · capacities [
+        {corridors.capacity.join(", ")}] · BPR &#946; = {corridors.beta}, n ={" "}
+        {corridors.n}
+      </Text>
     </View>
   );
 }
@@ -920,6 +1098,26 @@ const styles = StyleSheet.create({
   cardValue: { fontSize: 22, fontWeight: "500" },
 
   chartTitle: { color: COLORS.textDim, fontSize: 13, marginTop: 20, marginBottom: 10 },
+  sectionTitle: {
+    color: COLORS.text,
+    fontSize: 16,
+    fontWeight: "600",
+    marginTop: 28,
+    marginBottom: 2,
+  },
+  allocNote: {
+    color: COLORS.textDim,
+    fontSize: 11,
+    marginLeft: 118,
+    marginTop: -4,
+    marginBottom: 4,
+  },
+  allocFoot: {
+    color: COLORS.textDim,
+    fontSize: 11,
+    marginTop: 10,
+    lineHeight: 16,
+  },
   chart: {
     backgroundColor: COLORS.panel,
     borderRadius: 10,

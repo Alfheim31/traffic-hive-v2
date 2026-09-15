@@ -28,6 +28,8 @@ Verify with `netconvert --version`.
 | 2. Audit features | `make audit` | signal / crossing / sidewalk counts |
 | 3. Run scenarios | `make runs` | `data/out/<scenario>/{fcd,tripinfo,summary}.xml` |
 | 4. Pack assets | `make pack` | `app/assets/sim/{net.json,traj_*.bin,metrics.json}` |
+| 5. Calibrate | `make calibrate` | `data/out/calibration.json` |
+| 6. Figures | `make figures` | `figures/fig*.png` and `.pdf` |
 
 Or everything at once:
 
@@ -123,3 +125,44 @@ spot. The server prints its LAN address at startup; point the app at that.
 | `GET /status/{key}` | progress for the app's progress bar |
 | `GET /assets/{key}/{file}` | `net.json`, `metrics.json`, `traj_*.bin` |
 | `GET /runs` | cached runs, for a recent-runs picker |
+
+
+## Analysis modules
+
+| Module | Library | Purpose |
+|---|---|---|
+| `pipeline/theory.py` | NumPy | Exhaustive enumeration of UE, SO, SSO and the constrained optimum; Price of Anarchy |
+| `pipeline/calibrate.py` | SciPy | Fits BPR volume-delay parameters to SUMO observations by nonlinear least squares |
+| `pipeline/figures.py` | Matplotlib | Regenerates every manuscript figure from data files |
+
+### Technology stack
+
+| Tool | Role |
+|---|---|
+| SUMO | Microsimulation engine; the validation reference |
+| TraCI / sumolib | Runtime control and network parsing |
+| NumPy | Allocation enumeration, aggregation, array packing |
+| SciPy | Volume-delay calibration (`optimize.curve_fit`) |
+| Matplotlib | Publication figures |
+| FastAPI / Uvicorn | Run-on-demand simulation server |
+| React Native (Expo) + Skia | Playback and results interface |
+
+Unity is not used. Three-dimensional rendering was considered during design
+and dropped: the Skia canvas covers the visualisation requirement on both web
+and mobile from one codebase, and a separate engine would have added a build
+dependency without changing any result.
+
+### Calibration
+
+`beta = 0.15` and `n = 4` are United States Bureau of Public Roads defaults.
+Fitting them against this network gave `n = 1.80`, `beta = 0.384`, with
+R-squared 0.9974 against 0.9082 for the defaults — the network congests more
+gradually but from a lower threshold than the standard assumes. Re-run
+`make calibrate` after any change to the network and report the fitted
+values rather than the defaults.
+
+### On the analytical corridor parameters
+
+`pipeline/theory.py` ships with placeholder free-flow times. Override them
+with `--t0`, or fit them via `make calibrate`, before quoting any figure it
+produces. The capacities match the manuscript; the free-flow times do not.

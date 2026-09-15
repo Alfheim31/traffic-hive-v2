@@ -18,3 +18,12 @@ all: net runs pack
 
 clean:
 	rm -rf data/out app/assets/sim/*.bin
+
+calibrate:
+	python -m pipeline.calibrate --sweep 100 200 400 700 1000 1500 --horizon 600
+
+figures:
+	python -m pipeline.figures --all
+
+theory:
+	python -m pipeline.theory --demand 10 --report
