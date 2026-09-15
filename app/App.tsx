@@ -27,6 +27,12 @@ import {
   Platform,
 } from "react-native";
 
+import {
+  Gesture,
+  GestureDetector,
+  GestureHandlerRootView,
+} from "react-native-gesture-handler";
+
 import { COLORS } from "./src/theme";
 import {
   SERVER_URL,
@@ -81,6 +87,89 @@ export default function App() {
   const [finished, setFinished] = useState(false);
 
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
+
+  // Viewport. `zoom` multiplies the fit-to-bounds scale; `offset` pans in
+  // screen pixels. Both are plain React state rather than shared values
+  // because the map re-renders every frame during playback anyway, so
+  // driving them on the UI thread buys nothing.
+  const [zoom, setZoom] = useState(1);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  // True while a map drag is in progress, so the page stops scrolling
+  // underneath the gesture on touch devices.
+  const [mapActive, setMapActive] = useState(false);
+  const panStart = useRef({ x: 0, y: 0 });
+  const pinchStart = useRef(1);
+  const canvasRef = useRef<any>(null);
+
+  const MIN_ZOOM = 0.5;
+  const MAX_ZOOM = 12;
+  const clampZoom = (z: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z));
+
+  const resetView = useCallback(() => {
+    setZoom(1);
+    setOffset({ x: 0, y: 0 });
+  }, []);
+
+  /**
+   * Scroll-wheel zoom on web.
+   *
+   * Attached to the DOM node directly rather than via an onWheel prop:
+   * React Native Web does not forward wheel events, and the listener must be
+   * non-passive so preventDefault can stop the page scrolling underneath.
+   */
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    const node = canvasRef.current as unknown as HTMLElement | null;
+    if (!node || typeof node.addEventListener !== "function") return;
+
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      setZoom((z) => clampZoom(z * Math.exp(-event.deltaY * 0.0015)));
+    };
+
+    node.addEventListener("wheel", onWheel, { passive: false });
+    return () => node.removeEventListener("wheel", onWheel);
+  }, [canvasSize.width]);
+
+  const panGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .runOnJS(true)
+        .onBegin(() => {
+          setMapActive(true);
+        })
+        .onStart(() => {
+          panStart.current = offset;
+        })
+        .onChange((e) => {
+          setOffset({
+            x: panStart.current.x + e.translationX,
+            y: panStart.current.y + e.translationY,
+          });
+        })
+        .onFinalize(() => {
+          setMapActive(false);
+        }),
+    [offset],
+  );
+
+  const pinchGesture = useMemo(
+    () =>
+      Gesture.Pinch()
+        .runOnJS(true)
+        .onStart(() => {
+          pinchStart.current = zoom;
+        })
+        .onChange((e) => {
+          setZoom(clampZoom(pinchStart.current * e.scale));
+        }),
+    [zoom],
+  );
+
+  const mapGesture = useMemo(
+    () => Gesture.Simultaneous(panGesture, pinchGesture),
+    [panGesture, pinchGesture],
+  );
   const rafRef = useRef<number | null>(null);
   const lastTickRef = useRef<number>(0);
   const frameAccumulator = useRef(0);
@@ -275,7 +364,7 @@ export default function App() {
 
   const onCanvasLayout = useCallback((event: LayoutChangeEvent) => {
     const { width } = event.nativeEvent.layout;
-    setCanvasSize({ width, height: Math.max(240, Math.min(460, width * 0.62)) });
+    setCanvasSize({ width, height: Math.max(360, Math.min(760, width * 0.78)) });
   }, []);
 
   const togglePlay = useCallback(() => {
@@ -299,7 +388,12 @@ export default function App() {
   const showResults = finished && metrics;
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+    <ScrollView
+      style={styles.screen}
+      contentContainerStyle={styles.content}
+      scrollEnabled={!mapActive}
+    >
       <Text style={styles.title}>Traffic Hive</Text>
       <Text style={styles.subtitle}>
         Cooperative routing on the España corridor
@@ -405,6 +499,23 @@ export default function App() {
           </View>
 
           <View style={styles.scenarioRow}>
+            <View style={styles.zoomGroup}>
+              <Pressable
+                style={styles.zoomBtn}
+                onPress={() => setZoom((z) => clampZoom(z / 1.4))}
+              >
+                <Text style={styles.zoomIcon}>{"\u2212"}</Text>
+              </Pressable>
+              <Pressable style={styles.zoomBtn} onPress={resetView}>
+                <Text style={styles.zoomLabel}>{zoom.toFixed(1)}&times;</Text>
+              </Pressable>
+              <Pressable
+                style={styles.zoomBtn}
+                onPress={() => setZoom((z) => clampZoom(z * 1.4))}
+              >
+                <Text style={styles.zoomIcon}>+</Text>
+              </Pressable>
+            </View>
             {SCENARIOS.map((name) => (
               <Pressable
                 key={name}
@@ -426,7 +537,11 @@ export default function App() {
             ))}
           </View>
 
-          <View onLayout={onCanvasLayout} style={styles.canvasWrap}>
+          <View
+            ref={canvasRef}
+            onLayout={onCanvasLayout}
+            style={styles.canvasWrap}
+          >
             {!skiaReady && (
               <View style={[styles.skiaWait, { height: canvasSize.height || 260 }]}>
                 {skiaError ? (
@@ -454,13 +569,19 @@ export default function App() {
                   </View>
                 }
               >
-              <SimulationMap
-                network={network}
-                trajectories={active}
-                frame={frame}
-                width={canvasSize.width}
-                height={canvasSize.height}
-              />
+              <GestureDetector gesture={mapGesture}>
+                <View>
+                  <SimulationMap
+                    network={network}
+                    trajectories={active}
+                    frame={frame}
+                    width={canvasSize.width}
+                    height={canvasSize.height}
+                    zoom={zoom}
+                    offset={offset}
+                  />
+                </View>
+              </GestureDetector>
               </Suspense>
             )}
           </View>
@@ -518,6 +639,7 @@ export default function App() {
         </View>
       )}
     </ScrollView>
+    </GestureHandlerRootView>
   );
 }
 
@@ -742,7 +864,23 @@ const styles = StyleSheet.create({
   scenarioText: { color: COLORS.textDim, fontSize: 12 },
   scenarioTextActive: { color: "#0C0E0A", fontWeight: "600" },
 
-  canvasWrap: { width: "100%" },
+  canvasWrap: { width: "100%", overflow: "hidden" },
+  zoomGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginRight: 6,
+  },
+  zoomBtn: {
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 8,
+    backgroundColor: COLORS.background,
+    minWidth: 30,
+    alignItems: "center",
+  },
+  zoomIcon: { color: COLORS.text, fontSize: 14 },
+  zoomLabel: { color: COLORS.textDim, fontSize: 12 },
   skiaWait: {
     width: "100%",
     alignItems: "center",

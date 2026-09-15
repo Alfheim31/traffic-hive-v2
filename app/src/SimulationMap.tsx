@@ -23,6 +23,10 @@ interface MapProps {
   frame: number;
   width: number;
   height: number;
+  /** User zoom multiplier applied on top of the fit-to-bounds scale. */
+  zoom?: number;
+  /** User pan offset in screen pixels. */
+  offset?: { x: number; y: number };
   showSignals?: boolean;
   showCrossings?: boolean;
 }
@@ -58,6 +62,8 @@ export default function SimulationMap({
   frame,
   width,
   height,
+  zoom = 1,
+  offset = { x: 0, y: 0 },
   showSignals = true,
   showCrossings = true,
 }: MapProps) {
@@ -70,12 +76,20 @@ export default function SimulationMap({
    * fill would misrepresent distances a panellist may recognise.
    */
   const camera = useMemo(() => {
-    const margin = 0.94;
+    const margin = 0.96;
     const sx = width / Math.max(1, network.bounds.w);
     const sy = height / Math.max(1, network.bounds.h);
-    const scale = Math.min(sx, sy) * margin;
-    return { scale, tx: width / 2, ty: height / 2 };
-  }, [width, height, network.bounds.w, network.bounds.h]);
+    const fit = Math.min(sx, sy) * margin;
+    // User zoom multiplies the fit scale; pan is applied in screen pixels
+    // after scaling, so dragging moves the map by the distance the finger
+    // or cursor actually travelled regardless of zoom level.
+    return {
+      scale: fit * zoom,
+      tx: width / 2 + offset.x,
+      ty: height / 2 + offset.y,
+      fit,
+    };
+  }, [width, height, network.bounds.w, network.bounds.h, zoom, offset.x, offset.y]);
 
   /** Roads grouped by lane count so each width is one draw call. */
   const roadLayers = useMemo(() => {
