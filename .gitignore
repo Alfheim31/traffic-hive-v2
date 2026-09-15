@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.venv/
+data/raw/*.osm
+data/net/*.net.xml
+data/out/
+app/node_modules/
+app/assets/sim/*.bin
+.DS_Store

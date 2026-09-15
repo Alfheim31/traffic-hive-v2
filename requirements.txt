@@ -1,0 +1,5 @@
+eclipse-sumo>=1.19.0
+traci>=1.19.0
+sumolib>=1.19.0
+fastapi>=0.110
+uvicorn>=0.27
