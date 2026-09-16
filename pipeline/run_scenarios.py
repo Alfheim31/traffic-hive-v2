@@ -20,6 +20,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import math
 import random
 import subprocess
@@ -70,6 +71,28 @@ SCENARIOS: dict[str, Scenario] = {
         # over plain travel time. Retained to demonstrate that this
         # degenerates to Stochastic User Equilibrium.
         Scenario("hive_sue", "actuated", "hpdm", "HPDM (travel-time cost)"),
+        # Corridor-level assignment. Routes are precomputed by
+        # pipeline.corridors, so assignment is a softmax over K numbers
+        # rather than a shortest-path search per vehicle. This is both the
+        # formulation the manuscript describes and the reason ten thousand
+        # vehicles is tractable.
+        Scenario(
+            "hive_corridor",
+            "actuated",
+            "corridor",
+            "Traffic Hive (corridor)",
+            cost_basis="marginal",
+            epsilon=0.25,
+            reroute_period=10,
+        ),
+        Scenario(
+            "ue_corridor",
+            "actuated",
+            "corridor_ue",
+            "User equilibrium (corridor)",
+            cost_basis="travel_time",
+            reroute_period=10,
+        ),
     ]
 }
 
@@ -78,12 +101,50 @@ SCENARIOS: dict[str, Scenario] = {
 # Demand
 # --------------------------------------------------------------------------
 
+def _write_routes(out_path: Path, trips, rng) -> None:
+    """Write a .rou.xml with a Metro Manila vehicle mix.
+
+    The composition matters: a fleet of uniform passenger cars would not
+    reproduce the acceleration and gap behaviour that shapes queueing on
+    these roads, and would be the first thing a reviewer questioned.
+    """
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with out_path.open("w", encoding="utf-8") as fh:
+        fh.write('<?xml version="1.0" encoding="UTF-8"?>\n<routes>\n')
+        fh.write(
+            '  <vType id="car" vClass="passenger" accel="2.6" decel="4.5" '
+            'sigma="0.5" length="4.6" minGap="2.0" maxSpeed="27.8" '
+            'carFollowModel="Krauss"/>\n'
+        )
+        fh.write(
+            '  <vType id="jeepney" vClass="bus" accel="1.6" decel="4.0" '
+            'sigma="0.7" length="7.0" minGap="2.5" maxSpeed="19.4" '
+            'carFollowModel="Krauss"/>\n'
+        )
+        fh.write(
+            '  <vType id="motorcycle" vClass="motorcycle" accel="3.5" decel="5.5" '
+            'sigma="0.8" length="2.2" minGap="1.0" maxSpeed="25.0" '
+            'carFollowModel="Krauss" latAlignment="arbitrary"/>\n'
+        )
+        for i, (depart, src, dst) in enumerate(trips):
+            # Mix reflects Metro Manila composition rather than pure passenger
+            roll = rng.random()
+            vtype = "motorcycle" if roll < 0.32 else ("jeepney" if roll < 0.44 else "car")
+            fh.write(
+                f'  <trip id="v{i}" type="{vtype}" depart="{depart:.2f}" '
+                f'from="{src}" to="{dst}"/>\n'
+            )
+        fh.write("</routes>\n")
+
+
+
 def generate_demand(
     net_path: Path,
     out_path: Path,
     n_vehicles: int,
     horizon: int,
     seed: int,
+    od: tuple[str, str] | None = None,
 ) -> None:
     """Write a .rou.xml with `n_vehicles` trips over `horizon` seconds.
 
@@ -131,6 +192,24 @@ def generate_demand(
         routable[key] = ok
         return ok
 
+    # Corridor scenarios fix the origin-destination pair, because a
+    # mechanism that assigns among alternatives for one journey cannot be
+    # evaluated on a population of vehicles that share no journey.
+    if od is not None:
+        # od is a list of (origin, destination) pairs. Cycling through them
+        # spreads demand across the matrix, so both where vehicles start and
+        # where they are going vary — without which the corridors converge
+        # and congestion simply relocates to the shared destination.
+        pairs = od if isinstance(od, list) else [od]
+        trips = [
+            (peaked_depart(), *pairs[i % len(pairs)])
+            for i in range(n_vehicles)
+        ]
+        trips.sort(key=lambda x: x[0])
+        _write_routes(out_path, trips, rng)
+        print(f"wrote {out_path} ({n_vehicles} trips on the corridor OD pair)")
+        return
+
     trips: list[tuple[float, str, str]] = []
     rejected = 0
     for _ in range(n_vehicles):
@@ -161,34 +240,7 @@ def generate_demand(
 
     trips.sort(key=lambda t: t[0])
 
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    with out_path.open("w", encoding="utf-8") as fh:
-        fh.write('<?xml version="1.0" encoding="UTF-8"?>\n<routes>\n')
-        fh.write(
-            '  <vType id="car" vClass="passenger" accel="2.6" decel="4.5" '
-            'sigma="0.5" length="4.6" minGap="2.0" maxSpeed="27.8" '
-            'carFollowModel="Krauss"/>\n'
-        )
-        fh.write(
-            '  <vType id="jeepney" vClass="bus" accel="1.6" decel="4.0" '
-            'sigma="0.7" length="7.0" minGap="2.5" maxSpeed="19.4" '
-            'carFollowModel="Krauss"/>\n'
-        )
-        fh.write(
-            '  <vType id="motorcycle" vClass="motorcycle" accel="3.5" decel="5.5" '
-            'sigma="0.8" length="2.2" minGap="1.0" maxSpeed="25.0" '
-            'carFollowModel="Krauss" latAlignment="arbitrary"/>\n'
-        )
-        for i, (depart, src, dst) in enumerate(trips):
-            # Mix reflects Metro Manila composition rather than pure passenger
-            roll = rng.random()
-            vtype = "motorcycle" if roll < 0.32 else ("jeepney" if roll < 0.44 else "car")
-            fh.write(
-                f'  <trip id="v{i}" type="{vtype}" depart="{depart:.2f}" '
-                f'from="{src}" to="{dst}"/>\n'
-            )
-        fh.write("</routes>\n")
-
+    _write_routes(out_path, trips, rng)
     print(f"wrote {out_path} ({n_vehicles} trips, horizon {horizon}s, seed {seed})")
 
 
@@ -252,6 +304,159 @@ def softmax_choice(costs: list[float], eta: float, rng: random.Random) -> int:
         if draw <= acc:
             return i
     return len(costs) - 1
+
+
+class CorridorController:
+    """Assigns each departing vehicle to one of K precomputed corridors.
+
+    The expensive part of the earlier controller was per-vehicle routing:
+    two Dijkstra searches for every assignment. Here the routes already
+    exist, so an assignment costs a softmax over K numbers. Corridor loads
+    are refreshed once per epoch rather than per vehicle, which keeps the
+    cost independent of demand and is what makes ten thousand vehicles
+    practical.
+    """
+
+    BETA = 0.15
+    BPR_N = 4
+
+    def __init__(self, scenario: Scenario, seed: int, corridors_path: Path) -> None:
+        self.scenario = scenario
+        self.rng = random.Random(seed + 104729)
+        data = json.loads(corridors_path.read_text())
+        # Each entry point has its own corridor set: the alternatives
+        # available from one origin are not those available from another,
+        # so a vehicle must be assigned within the group it departed from.
+        self.groups = data.get("groups") or [data]
+        self.destination = data["destination"]
+        self.routes: list[list[tuple[str, ...]]] = []
+        self.t0: list[list[float]] = []
+        self.capacity: list[list[float]] = []
+        self._loads: list[list[float]] = []
+        self._counts: list[list[int]] = []
+        self._origin_to_group: dict[str, int] = {}
+
+        for gi, g in enumerate(self.groups):
+            cs = g["corridors"]
+            self.routes.append([tuple(c["edges"]) for c in cs])
+            self.t0.append([float(c["t0"]) for c in cs])
+            self.capacity.append([float(c["capacity"]) for c in cs])
+            self._loads.append([0.0] * len(cs))
+            self._counts.append([0] * len(cs))
+            self._origin_to_group[(g["origin"], g["destination"])] = gi
+
+        self._assigned = 0
+
+    def refresh_loads(self, traci) -> None:
+        """Recount vehicles on every corridor of every group.
+
+        Done once per epoch. Reading occupancy per vehicle would restore the
+        per-vehicle cost this design exists to remove.
+        """
+        for gi, group in enumerate(self.routes):
+            for i, route in enumerate(group):
+                total = 0
+                for edge in route:
+                    try:
+                        total += traci.edge.getLastStepVehicleNumber(edge)
+                    except traci.TraCIException:
+                        continue
+                self._loads[gi][i] = float(total)
+
+    def _costs(self, gi: int) -> list[float]:
+        """Cost of each corridor in one group under the scenario's basis."""
+        out = []
+        for i, _ in enumerate(self.routes[gi]):
+            ratio = self._loads[gi][i] / max(self.capacity[gi][i], 1e-9)
+            if self.scenario.cost_basis == "marginal":
+                # MC(N) = T0 [ 1 + (n+1) beta (N/C)^n ]
+                factor = 1.0 + (self.BPR_N + 1) * self.BETA * ratio**self.BPR_N
+            else:
+                # T(N) = T0 [ 1 + beta (N/C)^n ]
+                factor = 1.0 + self.BETA * ratio**self.BPR_N
+            out.append(self.t0[gi][i] * factor)
+        return out
+
+    def assign(self, traci, vid: str) -> None:
+        """Place one vehicle on a corridor within its own entry group."""
+        try:
+            route = traci.vehicle.getRoute(vid)
+            key = (route[0], route[-1])
+        except (traci.TraCIException, IndexError):
+            return
+        gi = self._origin_to_group.get(key)
+        if gi is None:
+            return
+        costs = self._costs(gi)
+        indices = list(range(len(costs)))
+
+        if self.scenario.routing == "corridor_ue":
+            # Selfish: always the cheapest corridor by travel time. Produces
+            # the herding the cooperative rule is meant to avoid.
+            pick = min(indices, key=lambda i: costs[i])
+        else:
+            if self.scenario.epsilon is not None and costs:
+                floor = min(costs)
+                limit = floor * (1.0 + self.scenario.epsilon)
+                kept = [i for i in indices if costs[i] <= limit]
+                if kept:
+                    indices = kept
+            local = [costs[i] for i in indices]
+            pick = indices[softmax_choice(local, self.scenario.eta, self.rng)]
+
+        try:
+            traci.vehicle.setRoute(vid, list(self.routes[gi][pick]))
+            self._loads[gi][pick] += 1.0
+            self._counts[gi][pick] += 1
+            self._assigned += 1
+        except traci.TraCIException:
+            pass
+
+    def step(self, traci, t: int) -> None:
+        """Assign vehicles that entered since the last call.
+
+        Uses the departed list rather than scanning every vehicle in the
+        network, so the per-step cost scales with arrivals rather than with
+        the total population.
+        """
+        if t % max(1, self.scenario.reroute_period) == 0:
+            self.refresh_loads(traci)
+        try:
+            departed = traci.simulation.getDepartedIDList()
+        except traci.TraCIException:
+            return
+        for vid in departed:
+            self.assign(traci, vid)
+
+    def summary(self) -> dict:
+        total = max(1, self._assigned)
+        # Aggregate across entry points: corridor i of every group is the
+        # i-th ranked alternative from that origin, so summing by index
+        # reports how demand split between primary and alternate routes
+        # overall.
+        width = max(len(c) for c in self._counts)
+        merged = [0] * width
+        for counts in self._counts:
+            for i, c in enumerate(counts):
+                merged[i] += c
+        # Normalised entropy of the split: 1.0 means demand divided evenly
+        # across the available alternatives, 0.0 means everything took one
+        # route. This is the direct measure of whether the mechanism is
+        # distributing, rather than inferring it from downstream metrics.
+        shares = [c / total for c in merged if c > 0]
+        if len(shares) > 1:
+            ent = -sum(s * math.log(s) for s in shares) / math.log(len(merged))
+        else:
+            ent = 0.0
+
+        return {
+            "assigned": self._assigned,
+            "entry_points": len(self.groups),
+            "spread_entropy": round(ent, 4),
+            "split": merged,
+            "share": [round(c / total, 4) for c in merged],
+            "per_origin": self._counts,
+        }
 
 
 class RoutingController:
@@ -456,7 +661,18 @@ def run(
     out_dir.mkdir(parents=True, exist_ok=True)
 
     routes = out_dir / "demand.rou.xml"
-    generate_demand(net_path, routes, n_vehicles, horizon, seed)
+    corridors_path = Path("data/net/corridors.json")
+    od = None
+    if scenario.routing.startswith("corridor"):
+        if not corridors_path.exists():
+            sys.exit(
+                "Corridor scenarios need data/net/corridors.json. "
+                "Run: python -m pipeline.corridors --discover 3"
+            )
+        cdata = json.loads(corridors_path.read_text())
+        groups = cdata.get("groups") or [cdata]
+        od = [(g["origin"], g["destination"]) for g in groups]
+    generate_demand(net_path, routes, n_vehicles, horizon, seed, od=od)
 
     tls_add = out_dir / "tls.add.xml"
     write_tls_override(net_path, tls_add, scenario.tls_type)
@@ -500,7 +716,11 @@ def run(
     else:
         print(f"[{scenario.name}] running headless with {scenario.routing} controller")
         traci.start(cmd)
-        controller = RoutingController(scenario, seed, net_path)
+        controller = (
+            CorridorController(scenario, seed, corridors_path)
+            if scenario.routing.startswith("corridor")
+            else RoutingController(scenario, seed, net_path)
+        )
         step = 0
         try:
             while traci.simulation.getMinExpectedNumber() > 0:
@@ -511,6 +731,11 @@ def run(
                     break
         finally:
             traci.close()
+        if isinstance(controller, CorridorController):
+            s = controller.summary()
+            print(f"[{scenario.name}] corridor split {s['split']} "
+                  f"shares {s['share']}")
+            (out_dir / "assignment.json").write_text(json.dumps(s, indent=2))
 
     print(f"[{scenario.name}] done -> {out_dir}")
     return paths
