@@ -166,3 +166,97 @@ values rather than the defaults.
 `pipeline/theory.py` ships with placeholder free-flow times. Override them
 with `--t0`, or fit them via `make calibrate`, before quoting any figure it
 produces. The capacities match the manuscript; the free-flow times do not.
+
+## Roadside obstacles
+
+Metro Manila corridors lose capacity to things OSM does not contain: vendors
+in the curb lane, jeepneys loading mid-block, enforcers holding a junction,
+stalled vehicles and road work. `pipeline/obstacles.py` applies these through
+TraCI during the run, so they shape the trajectories instead of being drawn
+on top of them. The Hive controller is never told where they are; it sees
+the slower edges through travel times and routes around them.
+
+| Type | Effect in SUMO (light / moderate / heavy) |
+|---|---|
+| `vendor` | curb lane at 60 / 40 / 25 % of its limit; heavy closes it on multi-lane roads |
+| `jeepney_stop` | passing jeepneys stop on the curb lane for 15 / 30 / 60 s |
+| `enforcer` | green phases at the junction held 1.5 / 2 / 2.5× longer |
+| `stalled` | curb lane closed |
+| `roadwork` | curb lane closed, next lane at 50 % |
+
+Coordinates are the local metre grid of `net.json` (origin at the network
+centre, y up). The easiest way to make a file is to place obstacles in the
+Hive Out page and press **Copy obstacles JSON**.
+
+```bash
+python -m pipeline.run_scenarios --scenario hive --vehicles 1000 --horizon 900 \
+    --fcd-period 1.0 --obstacles examples/obstacles_espana_demo.json
+python -m pipeline.pack --scenarios hive --baseline hive
+```
+
+`pack` now also writes `signals_<scenario>.bin` (distance to the next stop
+line and the real signal state for every vehicle and frame),
+`vehicles_<scenario>.json` (trip metadata) and `obstacles_<scenario>.json`.
+
+## Hive Out driver view
+
+`hive_out/index.html` is the split-screen demo: the simulation on the left,
+an obstacle editor, and the Hive Out phone with a 3D chase view of any
+vehicle you click. Served by the simulation server it can start runs:
+
+```bash
+python -m server.app --serve        # then open http://<host>:8000/hive-out/
+```
+
+Enter the number of vehicles (and the demand window) at the top, place
+obstacles on the map (or add several along one street), and press
+**Simulate**. The server runs `ue_corridor` and `hive_corridor` on identical
+demand with those obstacles and the page loads both: switch the playback
+between **User equilibrium** and **Traffic Hive** (the followed vehicle is
+kept, so the same driver's trip can be compared), and open **Results &
+comparison** for the same measures as the app (delay, waiting, peak queue,
+trip time, queue over time, synchronisation and fairness) plus how evenly
+each rule spread traffic over the roads. Runs already cached on the server
+appear as quick-pick vehicle counts. Obstacles added after a run are marked **Draft**
+until they have been simulated.
+
+## Corridor routing on measured costs
+
+The corridor controller used to price corridors with a BPR curve and a
+pipe-model capacity. On signalised urban corridors that model barely rises
+until a corridor is nearly full, because the real delay comes from queues
+at junctions. Every vehicle kept seeing the free-flow-fastest corridor as
+cheapest, so demand piled onto it (an 83 / 15 / 2 % split on España).
+
+It now measures each corridor's travel time every epoch from SUMO's
+per-edge estimates and derives marginal cost from it. With
+T − T0 = T0·β·(N/C)ⁿ,
+
+    MC = T0 [1 + (n+1) β (N/C)ⁿ] = T0 + (n+1)(T_obs − T0)
+
+so no capacity estimate is needed. Measurements are smoothed (weight 0.4 on
+the newest) to damp feedback oscillation, each assignment adds its expected
+delay n(T − T0)/N until the next measurement so a burst of departures does
+not herd, and the fairness tolerance ε is applied to expected travel time
+(what a driver experiences), not to marginal cost. The UE baseline uses the
+same measured travel times, so the comparison is like for like.
+
+`python -m pipeline.evaluate` runs both rules on identical demand over
+several seeds. Results on España (rebuilt network, 1000 vehicles, 15-minute
+demand window, 5 seeds):
+
+| | UE (selfish) | Traffic Hive |
+|---|---|---|
+| Trips completed | 96.5 % | 96.1 % |
+| Time loss per trip | 244 s | 216 s (−11 %) |
+| Waiting per trip | 115 s | 97 s (−15 %) |
+| Peak queue | 236 | 202 (−15 %) |
+| Gini of road-segment load | 0.783 | 0.734 |
+| Busiest 10 % of segments carry | 67.5 % | 61.3 % |
+| Corridor split entropy | 0.74 | 0.90 |
+| With the 12 España obstacles: time loss | 253 s | 237 s (−6 %, Hive ahead in 5/5 seeds) |
+
+Hive reduced time loss in 9 of the 10 seeded runs. About half of individual
+vehicles are faster under Hive than under UE; a system-optimal rule cannot
+make every driver faster, since some take a slightly longer corridor so that
+the rest save more, and ε bounds that sacrifice.

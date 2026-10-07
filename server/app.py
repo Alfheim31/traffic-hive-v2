@@ -34,6 +34,7 @@ from typing import Literal
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from pipeline import pack, run_scenarios
@@ -41,6 +42,7 @@ from pipeline.run_scenarios import SCENARIOS
 
 NET = Path("data/net/corridor.net.xml")
 CACHE = Path("data/cache")
+HIVE_OUT = Path(__file__).resolve().parent.parent / "hive_out"
 RunState = Literal["queued", "running", "done", "error"]
 
 
@@ -52,10 +54,15 @@ class RunRequest(BaseModel):
     """Parameters the app collects from the two input fields."""
 
     vehicles: int = Field(default=1000, ge=10, le=20000)
-    duration_s: int = Field(default=60, ge=10, le=1800)
+    duration_s: int = Field(default=60, ge=10, le=3600)
     seed: int = Field(default=42, ge=0, le=99999)
     scenarios: list[str] = Field(default_factory=lambda: ["ue", "hive"])
     baseline: str = "ue"
+    # Roadside obstacles applied inside SUMO (see pipeline/obstacles.py).
+    obstacles: list[dict] = Field(default_factory=list, max_length=200)
+    # Seconds between trajectory frames. 1.0 halves the asset size of long
+    # runs; the Hive Out view interpolates between frames either way.
+    fcd_period: float = Field(default=0.5, ge=0.25, le=2.0)
 
     def key(self) -> str:
         """Stable cache key for this parameter set."""
@@ -66,6 +73,8 @@ class RunRequest(BaseModel):
                 "s": self.seed,
                 "sc": sorted(self.scenarios),
                 "b": self.baseline,
+                "o": self.obstacles,
+                "f": self.fcd_period,
             },
             sort_keys=True,
         )
@@ -140,6 +149,8 @@ def _execute(req: RunRequest, record: RunRecord) -> None:
                 horizon=horizon,
                 seed=req.seed,
                 net_path=NET,
+                fcd_period=req.fcd_period,
+                obstacles=req.obstacles or None,
             )
 
         record.message = "packing assets"
@@ -165,6 +176,20 @@ def _execute(req: RunRequest, record: RunRecord) -> None:
             metrics[name] = pack.compute_metrics(
                 run_dir / "tripinfo.xml", run_dir / "summary.xml"
             )
+            # Signal states, trip metadata and resolved obstacles for the
+            # Hive Out driver view.
+            manifest[name]["driver"] = pack.pack_driver_data(run_dir, NET, out_dir, name)
+
+        # How evenly each rule spread traffic, and how corridor-based rules
+        # split demand: what the Hive Out results view compares.
+        from pipeline.evaluate import network_spread
+        spread, assignment = {}, {}
+        for name in req.scenarios:
+            run_dir = pack.OUT / name
+            spread[name] = network_spread(run_dir)
+            if (run_dir / "assignment.json").exists():
+                a = json.loads((run_dir / "assignment.json").read_text())
+                assignment[name] = {"share": a.get("share"), "spread_entropy": a.get("spread_entropy")}
 
         payload = {
             "params": req.model_dump(),
@@ -172,6 +197,8 @@ def _execute(req: RunRequest, record: RunRecord) -> None:
             "scenarios": manifest,
             "metrics": metrics,
             "comparison": pack.compare(metrics, req.baseline),
+            "spread": spread,
+            "assignment": assignment,
         }
         (out_dir / "metrics.json").write_text(json.dumps(payload, separators=(",", ":")))
 
@@ -286,8 +313,19 @@ def list_runs() -> dict:
                 params = json.loads(meta.read_text()).get("params", {})
             except json.JSONDecodeError:
                 continue
-            entries.append({"key": d.name, "params": params})
+            entries.append({
+                "key": d.name,
+                "params": params,
+                "mtime": meta.stat().st_mtime,
+                "driver": any(d.glob("signals_*.bin")),
+            })
     return {"runs": entries}
+
+
+# The Hive Out driver view, served from the same origin so it can start runs
+# and load their assets. Open http://<host>:8000/hive-out/
+if HIVE_OUT.exists():
+    api.mount("/hive-out", StaticFiles(directory=str(HIVE_OUT), html=True), name="hive-out")
 
 
 # --------------------------------------------------------------------------

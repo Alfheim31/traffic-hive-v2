@@ -273,6 +273,164 @@ def pack_trajectories(
 
 
 # --------------------------------------------------------------------------
+# Driver view (Hive Out)
+# --------------------------------------------------------------------------
+
+SIGNAL_CODE = {"G": 1, "g": 1, "y": 2, "Y": 2, "u": 2, "r": 3, "R": 3, "s": 3}
+
+
+def pack_driver_data(run_dir: Path, net_path: Path, out_dir: Path, name: str) -> dict:
+    """Per-vehicle data the Hive Out driver view needs beyond positions.
+
+    Writes, next to traj_<name>.bin:
+
+      signals_<name>.bin   u32 n_frames, u32 n_vehicles, then per frame per
+                           vehicle (u16 decimetres to the next signalised
+                           stop line or 0xFFFF, u8 state 0 none 1 green
+                           2 amber 3 red). The state is the one SUMO showed
+                           for the movement the vehicle actually makes next.
+      vehicles_<name>.json trip metadata from tripinfo (origin, destination,
+                           depart, arrival, time loss, reroute count).
+      obstacles_<name>.json the resolved obstacles of the run, if any.
+
+    Frame and vehicle indexing mirror pack_trajectories exactly: one frame
+    per <timestep>, vehicles indexed by first appearance.
+    """
+    import bisect
+    from collections import defaultdict
+
+    import sumolib
+
+    net = sumolib.net.readNet(str(net_path))
+    xmin, ymin, xmax, ymax = net.getBoundary()
+    cx, cy = (xmin + xmax) / 2.0, (ymin + ymax) / 2.0
+
+    tls_times: dict[str, list[float]] = defaultdict(list)
+    tls_states: dict[str, list[str]] = defaultdict(list)
+    tls_file = run_dir / "tls_states.xml"
+    if tls_file.exists():
+        for _, el in ET.iterparse(tls_file, events=("end",)):
+            if el.tag == "tlsState":
+                tls_times[el.get("id")].append(float(el.get("time")))
+                tls_states[el.get("id")].append(el.get("state"))
+            el.clear()
+
+    def signal_code(tls: str, link: int, t: float) -> int:
+        times = tls_times.get(tls)
+        if not times:
+            return 0
+        i = bisect.bisect_right(times, t) - 1
+        if i < 0:
+            return 0
+        state = tls_states[tls][i]
+        return SIGNAL_CODE.get(state[link], 0) if 0 <= link < len(state) else 0
+
+    ids: dict[str, int] = {}
+    frames: list[tuple[float, list[tuple[int, str, float]]]] = []
+    for _, el in ET.iterparse(run_dir / "fcd.xml", events=("end",)):
+        if el.tag != "timestep":
+            continue
+        rows = []
+        for v in el.findall("vehicle"):
+            vid = v.get("id")
+            if vid not in ids:
+                ids[vid] = len(ids)
+            rows.append((ids[vid], v.get("lane", ""), float(v.get("pos", "0"))))
+        frames.append((float(el.get("time", "0")), rows))
+        el.clear()
+
+    edge_seq: dict[int, list[str]] = defaultdict(list)
+    for _, rows in frames:
+        for vi, lane, _ in rows:
+            if not lane or lane.startswith(":"):
+                continue
+            e = lane.rsplit("_", 1)[0]
+            if not edge_seq[vi] or edge_seq[vi][-1] != e:
+                edge_seq[vi].append(e)
+    next_edge = {(vi, a): b for vi, seq in edge_seq.items()
+                 for a, b in zip(seq, seq[1:] + [None])}
+
+    lane_cache: dict[tuple[str, str | None], tuple[str, int, float] | None] = {}
+
+    def lane_signal(lane_id: str, nxt: str | None):
+        key = (lane_id, nxt)
+        if key in lane_cache:
+            return lane_cache[key]
+        lane = net.getLane(lane_id)
+        found = None
+        for c in lane.getOutgoing():
+            if c.getTLSID() and c.getTLLinkIndex() >= 0:
+                cand = (c.getTLSID(), c.getTLLinkIndex(), lane.getLength())
+                if nxt is not None and c.getTo().getID() == nxt:
+                    found = cand
+                    break
+                found = found or cand
+        lane_cache[key] = found
+        return found
+
+    n_frames, n_veh = len(frames), len(ids)
+    buf = bytearray(struct.pack("<II", n_frames, n_veh))
+    blank = struct.pack("<HB", 0xFFFF, 0)
+    for t, rows in frames:
+        rec = [blank] * n_veh
+        for vi, lane, pos in rows:
+            if not lane or lane.startswith(":"):
+                continue
+            sig = lane_signal(lane, next_edge.get((vi, lane.rsplit("_", 1)[0])))
+            if sig:
+                dist = max(0.0, sig[2] - pos)
+                rec[vi] = struct.pack("<HB", min(0xFFFE, int(dist * 10)),
+                                      signal_code(sig[0], sig[1], t))
+        buf += b"".join(rec)
+    (out_dir / f"signals_{name}.bin").write_bytes(bytes(buf))
+
+    def place(edge_id: str, end: bool) -> str:
+        try:
+            e = net.getEdge(edge_id)
+        except Exception:
+            return edge_id
+        if e.getName():
+            return e.getName()
+        # unnamed ramps and connectors: borrow a name from the junction
+        node = e.getToNode() if end else e.getFromNode()
+        for other in list(node.getOutgoing()) + list(node.getIncoming()):
+            if other.getName():
+                return other.getName()
+        return f"Junction {node.getID()}"
+
+    trips = {el.get("id"): el for el in ET.parse(run_dir / "tripinfo.xml").getroot().iter("tripinfo")}
+    vehicles = []
+    for vid, vi in sorted(ids.items(), key=lambda kv: kv[1]):
+        seq = edge_seq.get(vi, [])
+        tr = trips.get(vid)
+        vehicles.append({
+            "id": vid,
+            "from": place(seq[0], False) if seq else "",
+            "to": place(seq[-1], True) if seq else "",
+            "route_m": round(float(tr.get("routeLength")), 1) if tr is not None else None,
+            "depart_s": float(tr.get("depart")) if tr is not None else None,
+            "arrival_s": float(tr.get("arrival")) if tr is not None else None,
+            "time_loss_s": float(tr.get("timeLoss")) if tr is not None else None,
+            "waiting_s": float(tr.get("waitingTime")) if tr is not None else None,
+            "reroutes": int(tr.get("rerouteNo", 0)) if tr is not None else 0,
+        })
+    (out_dir / f"vehicles_{name}.json").write_text(
+        json.dumps({"t0": frames[0][0] if frames else 0.0, "vehicles": vehicles},
+                   separators=(",", ":")))
+
+    obstacle_file = run_dir / "obstacles.json"
+    target = out_dir / f"obstacles_{name}.json"
+    if obstacle_file.exists():
+        target.write_text(obstacle_file.read_text())
+    elif target.exists():
+        target.unlink()
+
+    return {"signals": f"signals_{name}.bin", "vehicles": f"vehicles_{name}.json",
+            "obstacles": target.name if target.exists() else None,
+            "signal_lanes": len(lane_cache)}
+
+
+# --------------------------------------------------------------------------
 # Metrics
 # --------------------------------------------------------------------------
 
@@ -458,6 +616,7 @@ def main() -> None:
               f"  {info['mb']} MB")
         metrics[name] = compute_metrics(run_dir / "tripinfo.xml",
                                         run_dir / "summary.xml")
+        info["driver"] = pack_driver_data(run_dir, args.net, args.assets, name)
 
     # Analytical reference values. These come from exhaustive enumeration
     # over the corridor model rather than from simulation, and are carried

@@ -317,12 +317,26 @@ class CorridorController:
     practical.
     """
 
-    BETA = 0.15
-    BPR_N = 4
+    # Volume-delay curve. The BPR textbook values (0.15, 4) stay nearly flat
+    # until a corridor is close to full, so every vehicle sees the
+    # free-flow-fastest corridor as cheapest and herds onto it. The values
+    # fitted to this network by pipeline.calibrate (R^2 = 0.997) respond to
+    # load much earlier; they are read from data/out/calibration.json when
+    # it exists, with the thesis' fitted values as the fallback.
+    BETA = 0.384
+    BPR_N = 1.80
+    CALIBRATION = Path("data/out/calibration.json")
 
     def __init__(self, scenario: Scenario, seed: int, corridors_path: Path) -> None:
         self.scenario = scenario
         self.rng = random.Random(seed + 104729)
+        if self.CALIBRATION.exists():
+            try:
+                fit = json.loads(self.CALIBRATION.read_text())["fit_free_exponent"]
+                self.BETA, self.BPR_N = float(fit["beta"]), float(fit["n"])
+            except (KeyError, ValueError, json.JSONDecodeError):
+                pass
+
         data = json.loads(corridors_path.read_text())
         # Each entry point has its own corridor set: the alternatives
         # available from one origin are not those available from another,
@@ -335,6 +349,7 @@ class CorridorController:
         self._loads: list[list[float]] = []
         self._counts: list[list[int]] = []
         self._origin_to_group: dict[str, int] = {}
+        self._time: list[list[float | None]] = []
 
         for gi, g in enumerate(self.groups):
             cs = g["corridors"]
@@ -342,40 +357,76 @@ class CorridorController:
             self.t0.append([float(c["t0"]) for c in cs])
             self.capacity.append([float(c["capacity"]) for c in cs])
             self._loads.append([0.0] * len(cs))
+            self._time.append([None] * len(cs))
+
             self._counts.append([0] * len(cs))
             self._origin_to_group[(g["origin"], g["destination"])] = gi
 
         self._assigned = 0
 
-    def refresh_loads(self, traci) -> None:
-        """Recount vehicles on every corridor of every group.
+    #: cap on one edge's measured travel time, so a single stopped queue
+    #: reads as "very slow" rather than as infinity
+    EDGE_TIME_CAP = 300.0
+    #: weight of the newest measurement in the smoothed corridor time;
+    #: smoothing damps the oscillation that pure feedback routing causes
+    SMOOTHING = 0.4
 
-        Done once per epoch. Reading occupancy per vehicle would restore the
-        per-vehicle cost this design exists to remove.
+    def refresh_loads(self, traci) -> None:
+        """Measure every corridor once per epoch.
+
+        Two quantities per corridor: N, the vehicles currently on it, and
+        T_obs, its current travel time summed from SUMO's per-edge
+        estimates (edge length over current mean speed). Measuring T
+        directly matters on signalised urban corridors: delay there comes
+        from queues at junctions, which a link-capacity model badly
+        underestimates, so a modelled cost stays near free flow and every
+        vehicle keeps choosing the shortest corridor.
         """
         for gi, group in enumerate(self.routes):
             for i, route in enumerate(group):
-                total = 0
+                total, t_obs = 0, 0.0
                 for edge in route:
                     try:
                         total += traci.edge.getLastStepVehicleNumber(edge)
+                        t_obs += min(self.EDGE_TIME_CAP, traci.edge.getTraveltime(edge))
                     except traci.TraCIException:
                         continue
                 self._loads[gi][i] = float(total)
+                prev = self._time[gi][i]
+                t_obs = max(t_obs, self.t0[gi][i])
+                self._time[gi][i] = t_obs if prev is None else (1 - self.SMOOTHING) * prev + self.SMOOTHING * t_obs
+
+    def _travel_times(self, gi: int) -> list[float]:
+        """Current expected travel time per corridor (measured, smoothed)."""
+        return [self._time[gi][i] if self._time[gi][i] is not None else self.t0[gi][i]
+                for i in range(len(self.routes[gi]))]
 
     def _costs(self, gi: int) -> list[float]:
-        """Cost of each corridor in one group under the scenario's basis."""
-        out = []
-        for i, _ in enumerate(self.routes[gi]):
-            ratio = self._loads[gi][i] / max(self.capacity[gi][i], 1e-9)
-            if self.scenario.cost_basis == "marginal":
-                # MC(N) = T0 [ 1 + (n+1) beta (N/C)^n ]
-                factor = 1.0 + (self.BPR_N + 1) * self.BETA * ratio**self.BPR_N
-            else:
-                # T(N) = T0 [ 1 + beta (N/C)^n ]
-                factor = 1.0 + self.BETA * ratio**self.BPR_N
-            out.append(self.t0[gi][i] * factor)
-        return out
+        """Cost of each corridor in one group under the scenario's basis.
+
+        Marginal cost follows from BPR without needing capacity: since
+        T - T0 = T0 beta (N/C)^n, the marginal cost
+        MC = T0 [1 + (n+1) beta (N/C)^n] = T0 + (n+1)(T - T0).
+        Each driver's choice is priced at the delay it adds to everyone
+        already on the corridor, not just the time it will itself spend.
+        """
+        times = self._travel_times(gi)
+        if self.scenario.cost_basis == "marginal":
+            return [self.t0[gi][i] + (self.BPR_N + 1) * (times[i] - self.t0[gi][i])
+                    for i in range(len(times))]
+        return times
+
+    def _bump(self, gi: int, i: int) -> None:
+        """Account for a vehicle just assigned, before the next measurement.
+
+        Its expected contribution to corridor delay is dT/dN = n (T - T0)/N
+        under BPR; a small floor keeps empty corridors from looking free to
+        an unlimited burst of departures.
+        """
+        t = self._travel_times(gi)[i]
+        n_now = max(self._loads[gi][i], 5.0)
+        self._time[gi][i] = t + max(0.3, self.BPR_N * (t - self.t0[gi][i]) / n_now)
+        self._loads[gi][i] += 1.0
 
     def assign(self, traci, vid: str) -> None:
         """Place one vehicle on a corridor within its own entry group."""
@@ -396,9 +447,13 @@ class CorridorController:
             pick = min(indices, key=lambda i: costs[i])
         else:
             if self.scenario.epsilon is not None and costs:
-                floor = min(costs)
-                limit = floor * (1.0 + self.scenario.epsilon)
-                kept = [i for i in indices if costs[i] <= limit]
+                # Fairness bounds what a driver experiences, so it is applied
+                # to expected travel time, not to marginal cost: no driver is
+                # sent on a corridor expected to take more than (1 + eps)
+                # times the fastest one right now.
+                times = self._travel_times(gi)
+                limit = min(times) * (1.0 + self.scenario.epsilon)
+                kept = [i for i in indices if times[i] <= limit]
                 if kept:
                     indices = kept
             local = [costs[i] for i in indices]
@@ -406,7 +461,7 @@ class CorridorController:
 
         try:
             traci.vehicle.setRoute(vid, list(self.routes[gi][pick]))
-            self._loads[gi][pick] += 1.0
+            self._bump(gi, pick)
             self._counts[gi][pick] += 1
             self._assigned += 1
         except traci.TraCIException:
@@ -653,9 +708,16 @@ def run(
     seed: int,
     net_path: Path = NET,
     fcd_period: float = 0.5,
+    obstacles=None,
 ) -> dict[str, Path]:
-    """Run one scenario headless and return the paths of its outputs."""
+    """Run one scenario headless and return the paths of its outputs.
+
+    `obstacles` is a path, JSON string or list of obstacle dicts (see
+    pipeline.obstacles). When given, they are applied through TraCI during
+    the run, so their effect is in the trajectories rather than drawn on top.
+    """
     import traci
+    from pipeline import obstacles as obstacle_model
 
     out_dir = OUT / scenario.name
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -677,6 +739,17 @@ def run(
     tls_add = out_dir / "tls.add.xml"
     write_tls_override(net_path, tls_add, scenario.tls_type)
 
+    # Log every signal change so the driver view can show the real light a
+    # vehicle faces (pack.pack_driver_data reads this).
+    tls_log = out_dir / "tls_log.add.xml"
+    tls_log.write_text(
+        '<additional>\n  <timedEvent type="SaveTLSStates" '
+        f'dest="{(out_dir / "tls_states.xml").resolve()}"/>\n</additional>\n'
+    )
+
+    obs = obstacle_model.resolve(obstacle_model.load(obstacles), net_path) if obstacles else []
+    obs_ctl = obstacle_model.ObstacleController(obs) if obs else None
+
     paths = {
         "fcd": out_dir / "fcd.xml",
         "tripinfo": out_dir / "tripinfo.xml",
@@ -687,7 +760,7 @@ def run(
         "sumo",
         "-n", str(net_path),
         "-r", str(routes),
-        "-a", str(tls_add),
+        "-a", f"{tls_add},{tls_log}",
         "--begin", "0",
         "--end", str(horizon + 600),
         "--step-length", "0.5",
@@ -706,7 +779,7 @@ def run(
         "--waiting-time-memory", "10000",
     ]
 
-    needs_traci = scenario.routing != "shortest"
+    needs_traci = scenario.routing != "shortest" or obs_ctl is not None
     if not needs_traci:
         print(f"[{scenario.name}] running headless (no TraCI)")
         result = subprocess.run(cmd, capture_output=True, text=True)
@@ -716,16 +789,21 @@ def run(
     else:
         print(f"[{scenario.name}] running headless with {scenario.routing} controller")
         traci.start(cmd)
-        controller = (
-            CorridorController(scenario, seed, corridors_path)
-            if scenario.routing.startswith("corridor")
-            else RoutingController(scenario, seed, net_path)
-        )
+        if scenario.routing == "shortest":
+            controller = None
+        elif scenario.routing.startswith("corridor"):
+            controller = CorridorController(scenario, seed, corridors_path)
+        else:
+            controller = RoutingController(scenario, seed, net_path)
         step = 0
         try:
             while traci.simulation.getMinExpectedNumber() > 0:
                 traci.simulationStep()
-                controller.step(traci, int(traci.simulation.getTime()))
+                now = traci.simulation.getTime()
+                if obs_ctl is not None:
+                    obs_ctl.step(traci, now)
+                if controller is not None:
+                    controller.step(traci, int(now))
                 step += 1
                 if step > (horizon + 600) * 2:
                     break
@@ -736,6 +814,12 @@ def run(
             print(f"[{scenario.name}] corridor split {s['split']} "
                   f"shares {s['share']}")
             (out_dir / "assignment.json").write_text(json.dumps(s, indent=2))
+
+    if obs:
+        obstacle_model.write_report(obs, out_dir / "obstacles.json")
+        paths["obstacles"] = out_dir / "obstacles.json"
+    elif (out_dir / "obstacles.json").exists():
+        (out_dir / "obstacles.json").unlink()
 
     print(f"[{scenario.name}] done -> {out_dir}")
     return paths
@@ -749,11 +833,15 @@ def main() -> None:
     parser.add_argument("--horizon", type=int, default=900)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--net", type=Path, default=NET)
+    parser.add_argument("--obstacles", type=Path, default=None,
+                        help="JSON file of roadside obstacles (see pipeline/obstacles.py)")
+    parser.add_argument("--fcd-period", type=float, default=0.5)
     args = parser.parse_args()
 
     targets = list(SCENARIOS.values()) if args.all else [SCENARIOS[args.scenario]]
     for scenario in targets:
-        run(scenario, args.vehicles, args.horizon, args.seed, args.net)
+        run(scenario, args.vehicles, args.horizon, args.seed, args.net,
+            fcd_period=args.fcd_period, obstacles=args.obstacles)
 
 
 if __name__ == "__main__":

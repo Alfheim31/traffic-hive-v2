@@ -1,0 +1,104 @@
+{
+ "obstacles": [
+  {
+   "id": "o1",
+   "type": "vendor",
+   "label": "Blumentritt market stalls",
+   "x": 1128.4,
+   "y": 83.8,
+   "severity": 3
+  },
+  {
+   "id": "o2",
+   "type": "vendor",
+   "label": "Dapitan food stalls",
+   "x": 151.1,
+   "y": 861.0,
+   "severity": 2
+  },
+  {
+   "id": "o3",
+   "type": "vendor",
+   "label": "Espa\u00f1a sidewalk vendors",
+   "x": -506.6,
+   "y": -401.1,
+   "severity": 1
+  },
+  {
+   "id": "o4",
+   "type": "vendor",
+   "label": "Laon Laan fruit vendors",
+   "x": -257.5,
+   "y": 698.5,
+   "severity": 2
+  },
+  {
+   "id": "o5",
+   "type": "vendor",
+   "label": "Lerma street vendors",
+   "x": -918.4,
+   "y": -664.3,
+   "severity": 2
+  },
+  {
+   "id": "o6",
+   "type": "jeepney_stop",
+   "label": "Espa\u00f1a jeepney loading",
+   "x": -271.7,
+   "y": -186.9,
+   "severity": 3
+  },
+  {
+   "id": "o7",
+   "type": "jeepney_stop",
+   "label": "Lacson jeepney stop",
+   "x": 139.5,
+   "y": -513.0,
+   "severity": 2
+  },
+  {
+   "id": "o8",
+   "type": "jeepney_stop",
+   "label": "G. Tuazon jeepney stop",
+   "x": 931.6,
+   "y": -421.0,
+   "severity": 2
+  },
+  {
+   "id": "o9",
+   "type": "enforcer",
+   "label": "MMDA enforcer (Espa\u00f1a\u2013Lacson)",
+   "x": -199.2,
+   "y": -128.3,
+   "severity": 2
+  },
+  {
+   "id": "o10",
+   "type": "enforcer",
+   "label": "Barangay tanod (Espa\u00f1a\u2013Blumentritt)",
+   "x": 482.1,
+   "y": 506.1,
+   "severity": 1
+  },
+  {
+   "id": "o11",
+   "type": "stalled",
+   "label": "Stalled jeepney",
+   "x": 393.0,
+   "y": -878.5,
+   "severity": 2,
+   "start_s": 120,
+   "end_s": 480
+  },
+  {
+   "id": "o12",
+   "type": "roadwork",
+   "label": "Maceda road repair",
+   "x": 299.1,
+   "y": 447.3,
+   "severity": 2,
+   "start_s": 300,
+   "end_s": 900
+  }
+ ]
+}

@@ -8,3 +8,5 @@ app/node_modules/
 app/assets/sim/*.bin
 .DS_Store
 data/cache/
+data/eval/
+data/demo_runs/
