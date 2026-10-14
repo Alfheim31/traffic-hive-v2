@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1200" height="150" viewBox="0 0 1200 150" role="img" aria-label="Next stop: a city that moves together">
+<title>Next stop: a city that moves together</title>
+<defs>
+  <pattern id="honey" width="34.64" height="60" patternUnits="userSpaceOnUse">
+    <path d="M17.32 0L34.64 10V30L17.32 40L0 30V10Z M17.32 40V60" fill="none" stroke="#F9AB00" stroke-width="1" stroke-opacity="0.07"/>
+  </pattern>
+  <pattern id="honeyBright" width="34.64" height="60" patternUnits="userSpaceOnUse">
+    <path d="M17.32 0L34.64 10V30L17.32 40L0 30V10Z M17.32 40V60" fill="none" stroke="#FFD166" stroke-width="1.2" stroke-opacity="0.55"/>
+  </pattern>
+  <radialGradient id="spot"><stop offset="0" stop-color="#fff" stop-opacity="1"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+  <filter id="glow" x="-80%" y="-80%" width="260%" height="260%">
+    <feGaussianBlur stdDeviation="3" result="b"/>
+    <feMerge><feMergeNode in="b"/><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+  </filter>
+</defs>
+<rect width="1200" height="150" rx="18" fill="#0D1117"/>
+<rect width="1200" height="150" rx="18" fill="url(#honey)"/>
+<mask id="sweep"><rect width="1200" height="150" fill="#000"/>
+  <circle cy="68" r="160" fill="url(#spot)">
+    <animate attributeName="cx" values="-300;1500" dur="9s" repeatCount="indefinite"/>
+  </circle>
+</mask>
+<rect width="1200" height="150" rx="18" fill="url(#honeyBright)" mask="url(#sweep)"/>
+<rect x="0.5" y="0.5" width="1199" height="149" rx="18" fill="none" stroke="#30363D"/>
+<defs><path id="fr" d="M -40 112 C 300 92, 900 132, 1240 108"/></defs>
+<use xlink:href="#fr" fill="none" stroke="#1C2230" stroke-width="22" stroke-linecap="round"/>
+<g filter="url(#glow)"><circle r="3.4" fill="#FFD166"/><circle r="7.48" fill="#FFD166" opacity="0.18"/><animateMotion dur="9.00s" begin="0.00s" repeatCount="indefinite" rotate="auto"><mpath xlink:href="#fr"/></animateMotion></g>
+<g filter="url(#glow)"><circle r="3.4" fill="#F9AB00"/><circle r="7.48" fill="#F9AB00" opacity="0.18"/><animateMotion dur="9.00s" begin="-1.50s" repeatCount="indefinite" rotate="auto"><mpath xlink:href="#fr"/></animateMotion></g>
+<g filter="url(#glow)"><circle r="3.4" fill="#FFD166"/><circle r="7.48" fill="#FFD166" opacity="0.18"/><animateMotion dur="9.00s" begin="-3.00s" repeatCount="indefinite" rotate="auto"><mpath xlink:href="#fr"/></animateMotion></g>
+<g filter="url(#glow)"><circle r="3.4" fill="#F9AB00"/><circle r="7.48" fill="#F9AB00" opacity="0.18"/><animateMotion dur="9.00s" begin="-4.50s" repeatCount="indefinite" rotate="auto"><mpath xlink:href="#fr"/></animateMotion></g>
+<g filter="url(#glow)"><circle r="3.4" fill="#FFD166"/><circle r="7.48" fill="#FFD166" opacity="0.18"/><animateMotion dur="9.00s" begin="-6.00s" repeatCount="indefinite" rotate="auto"><mpath xlink:href="#fr"/></animateMotion></g>
+<g filter="url(#glow)"><circle r="3.4" fill="#F9AB00"/><circle r="7.48" fill="#F9AB00" opacity="0.18"/><animateMotion dur="9.00s" begin="-7.50s" repeatCount="indefinite" rotate="auto"><mpath xlink:href="#fr"/></animateMotion></g>
+<text x="600.0" y="64" text-anchor="middle" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="20" fill="#E6EDF3">next stop: <tspan fill="#F9AB00">a city that moves together</tspan></text>
+</svg>

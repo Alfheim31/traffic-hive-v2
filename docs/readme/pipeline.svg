@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1200" height="400" viewBox="0 0 1200 400" role="img" aria-label="Pipeline: OpenStreetMap to network, audit, scenarios in SUMO, pack, then playback, server and figures">
+<title>Pipeline: OpenStreetMap to network, audit, scenarios in SUMO, pack, then playback, server and figures</title>
+<defs>
+  <pattern id="honey" width="34.64" height="60" patternUnits="userSpaceOnUse">
+    <path d="M17.32 0L34.64 10V30L17.32 40L0 30V10Z M17.32 40V60" fill="none" stroke="#F9AB00" stroke-width="1" stroke-opacity="0.07"/>
+  </pattern>
+  <pattern id="honeyBright" width="34.64" height="60" patternUnits="userSpaceOnUse">
+    <path d="M17.32 0L34.64 10V30L17.32 40L0 30V10Z M17.32 40V60" fill="none" stroke="#FFD166" stroke-width="1.2" stroke-opacity="0.55"/>
+  </pattern>
+  <radialGradient id="spot"><stop offset="0" stop-color="#fff" stop-opacity="1"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+  <filter id="glow" x="-80%" y="-80%" width="260%" height="260%">
+    <feGaussianBlur stdDeviation="3" result="b"/>
+    <feMerge><feMergeNode in="b"/><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+  </filter>
+</defs>
+<rect width="1200" height="400" rx="18" fill="#0D1117"/>
+<rect width="1200" height="400" rx="18" fill="url(#honey)"/>
+<mask id="sweep"><rect width="1200" height="400" fill="#000"/>
+  <circle cy="180" r="240" fill="url(#spot)">
+    <animate attributeName="cx" values="-300;1500" dur="11s" repeatCount="indefinite"/>
+  </circle>
+</mask>
+<rect width="1200" height="400" rx="18" fill="url(#honeyBright)" mask="url(#sweep)"/>
+<rect x="0.5" y="0.5" width="1199" height="399" rx="18" fill="none" stroke="#30363D"/>
+<polygon points="65.4,64.0 55.0,70.0 44.6,64.0 44.6,52.0 55.0,46.0 65.4,52.0" fill="#F9AB00" filter="url(#glow)"/>
+<text x="78" y="66" font-family="-apple-system,'Segoe UI','Helvetica Neue',Arial,sans-serif" font-size="24" font-weight="800" fill="#E6EDF3">FROM <tspan fill="#F9AB00">OSM</tspan> TO THE DEFENSE ROOM</text>
+<text x="78" y="40" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="11" letter-spacing="2" fill="#F9AB00">HOW IT FITS TOGETHER</text>
+<text x="44" y="96" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="14" fill="#8B949E">SUMO computes everything ahead of time. The screens only play it back.</text>
+<text x="1156" y="66" text-anchor="end" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="12" fill="#8B949E">make all</text>
+<path id="pl" d="M 90 200 H 810"/>
+<line x1="90" y1="200" x2="810" y2="200" stroke="#30363D" stroke-width="3"/>
+<g filter="url(#glow)"><circle r="4" fill="#F9AB00"/><circle r="8.8" fill="#F9AB00" opacity="0.18"/><animateMotion dur="4.50s" begin="0.00s" repeatCount="indefinite" rotate="auto"><mpath xlink:href="#pl"/></animateMotion></g>
+<g filter="url(#glow)"><circle r="4" fill="#F9AB00"/><circle r="8.8" fill="#F9AB00" opacity="0.18"/><animateMotion dur="4.50s" begin="-1.50s" repeatCount="indefinite" rotate="auto"><mpath xlink:href="#pl"/></animateMotion></g>
+<g filter="url(#glow)"><circle r="4" fill="#F9AB00"/><circle r="8.8" fill="#F9AB00" opacity="0.18"/><animateMotion dur="4.50s" begin="-3.00s" repeatCount="indefinite" rotate="auto"><mpath xlink:href="#pl"/></animateMotion></g>
+<polygon points="122.9,219.0 90.0,238.0 57.1,219.0 57.1,181.0 90.0,162.0 122.9,181.0" fill="#161B22" stroke="#F9AB00" stroke-width="2"/>
+<text x="90" y="205" text-anchor="middle" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="13" font-weight="700" fill="#F9AB00">OSM</text>
+<text x="90" y="264" text-anchor="middle" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="12" fill="#E6EDF3">map.osm</text>
+<text x="90" y="282" text-anchor="middle" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="11" fill="#8B949E">data/raw</text>
+<polygon points="302.9,219.0 270.0,238.0 237.1,219.0 237.1,181.0 270.0,162.0 302.9,181.0" fill="#161B22" stroke="#F9AB00" stroke-width="2"/>
+<text x="270" y="205" text-anchor="middle" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="13" font-weight="700" fill="#F9AB00">NET</text>
+<text x="270" y="264" text-anchor="middle" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="12" fill="#E6EDF3">make net</text>
+<text x="270" y="282" text-anchor="middle" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="11" fill="#8B949E">SUMO network</text>
+<polygon points="482.9,219.0 450.0,238.0 417.1,219.0 417.1,181.0 450.0,162.0 482.9,181.0" fill="#161B22" stroke="#F9AB00" stroke-width="2"/>
+<text x="450" y="205" text-anchor="middle" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="13" font-weight="700" fill="#F9AB00">AUDIT</text>
+<text x="450" y="264" text-anchor="middle" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="12" fill="#E6EDF3">make audit</text>
+<text x="450" y="282" text-anchor="middle" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="11" fill="#8B949E">the gate</text>
+<polygon points="662.9,219.0 630.0,238.0 597.1,219.0 597.1,181.0 630.0,162.0 662.9,181.0" fill="#161B22" stroke="#F9AB00" stroke-width="2"/>
+<text x="630" y="205" text-anchor="middle" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="13" font-weight="700" fill="#F9AB00">RUN</text>
+<text x="630" y="264" text-anchor="middle" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="12" fill="#E6EDF3">make runs</text>
+<text x="630" y="282" text-anchor="middle" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="11" fill="#8B949E">4 rules · 1 demand</text>
+<polygon points="842.9,219.0 810.0,238.0 777.1,219.0 777.1,181.0 810.0,162.0 842.9,181.0" fill="#161B22" stroke="#F9AB00" stroke-width="2"/>
+<text x="810" y="205" text-anchor="middle" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="13" font-weight="700" fill="#F9AB00">PACK</text>
+<text x="810" y="264" text-anchor="middle" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="12" fill="#E6EDF3">make pack</text>
+<text x="810" y="282" text-anchor="middle" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="11" fill="#8B949E">THV1 binary + metrics</text>
+<path d="M 848 200 C 900 200, 900 130, 950 130" fill="none" stroke="#F9AB00" stroke-opacity="0.5" stroke-width="2" stroke-dasharray="6 6"><animate attributeName="stroke-dashoffset" values="0;-24" dur="1s" repeatCount="indefinite"/></path>
+<rect x="950" y="108" width="160" height="44" rx="10" fill="#161B22" stroke="#30363D"/>
+<text x="966" y="127" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="12" font-weight="700" fill="#E6EDF3">APP</text>
+<text x="966" y="143" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="10" fill="#8B949E">Expo + Skia playback</text>
+<path d="M 848 200 C 900 200, 900 206, 950 206" fill="none" stroke="#F9AB00" stroke-opacity="0.5" stroke-width="2" stroke-dasharray="6 6"><animate attributeName="stroke-dashoffset" values="0;-24" dur="1s" repeatCount="indefinite"/></path>
+<rect x="950" y="184" width="160" height="44" rx="10" fill="#161B22" stroke="#30363D"/>
+<text x="966" y="203" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="12" font-weight="700" fill="#E6EDF3">HIVE OUT</text>
+<text x="966" y="219" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="10" fill="#8B949E">driver view + obstacles</text>
+<path d="M 848 200 C 900 200, 900 282, 950 282" fill="none" stroke="#F9AB00" stroke-opacity="0.5" stroke-width="2" stroke-dasharray="6 6"><animate attributeName="stroke-dashoffset" values="0;-24" dur="1s" repeatCount="indefinite"/></path>
+<rect x="950" y="260" width="160" height="44" rx="10" fill="#161B22" stroke="#30363D"/>
+<text x="966" y="279" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="12" font-weight="700" fill="#E6EDF3">SERVER</text>
+<text x="966" y="295" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="10" fill="#8B949E">FastAPI run-on-demand</text>
+<text x="60" y="370" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="12" fill="#8B949E">analysis on the side:  <tspan fill="#FFD166">make calibrate  ·  make theory  ·  make figures  ·  python -m pipeline.evaluate</tspan></text>
+</svg>

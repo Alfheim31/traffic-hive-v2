@@ -1,0 +1,110 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1200" height="470" viewBox="0 0 1200 470" role="img" aria-label="Price of Anarchy 1.046: selfish drivers all take EDSA, the system optimum moves two to C-5">
+<title>Price of Anarchy 1.046: selfish drivers all take EDSA, the system optimum moves two to C-5</title>
+<defs>
+  <pattern id="honey" width="34.64" height="60" patternUnits="userSpaceOnUse">
+    <path d="M17.32 0L34.64 10V30L17.32 40L0 30V10Z M17.32 40V60" fill="none" stroke="#F9AB00" stroke-width="1" stroke-opacity="0.07"/>
+  </pattern>
+  <pattern id="honeyBright" width="34.64" height="60" patternUnits="userSpaceOnUse">
+    <path d="M17.32 0L34.64 10V30L17.32 40L0 30V10Z M17.32 40V60" fill="none" stroke="#FFD166" stroke-width="1.2" stroke-opacity="0.55"/>
+  </pattern>
+  <radialGradient id="spot"><stop offset="0" stop-color="#fff" stop-opacity="1"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+  <filter id="glow" x="-80%" y="-80%" width="260%" height="260%">
+    <feGaussianBlur stdDeviation="3" result="b"/>
+    <feMerge><feMergeNode in="b"/><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+  </filter>
+</defs>
+<rect width="1200" height="470" rx="18" fill="#0D1117"/>
+<rect width="1200" height="470" rx="18" fill="url(#honey)"/>
+<mask id="sweep"><rect width="1200" height="470" fill="#000"/>
+  <circle cy="212" r="282" fill="url(#spot)">
+    <animate attributeName="cx" values="-300;1500" dur="10s" repeatCount="indefinite"/>
+  </circle>
+</mask>
+<rect width="1200" height="470" rx="18" fill="url(#honeyBright)" mask="url(#sweep)"/>
+<rect x="0.5" y="0.5" width="1199" height="469" rx="18" fill="none" stroke="#30363D"/>
+<polygon points="65.4,64.0 55.0,70.0 44.6,64.0 44.6,52.0 55.0,46.0 65.4,52.0" fill="#F9AB00" filter="url(#glow)"/>
+<text x="78" y="66" font-family="-apple-system,'Segoe UI','Helvetica Neue',Arial,sans-serif" font-size="24" font-weight="800" fill="#E6EDF3">THE PRICE OF <tspan fill="#F9AB00">ANARCHY</tspan></text>
+<text x="78" y="40" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="11" letter-spacing="2" fill="#F9AB00">ANALYTICAL MODEL · pipeline/theory.py</text>
+<text x="44" y="96" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="14" fill="#8B949E">10 drivers, three corridors, every possible split enumerated.</text>
+<text x="1156" y="66" text-anchor="end" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="12" fill="#8B949E">BPR β = 0.15, n = 4</text>
+<rect x="60" y="120" width="520" height="270" rx="14" fill="#161B22" fill-opacity="0.9" stroke="#30363D"/>
+<text x="82" y="150" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="14" font-weight="700" fill="#EA4335">SELFISH (UE)</text>
+<text x="558" y="150" text-anchor="end" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="13" fill="#8B949E">total <tspan fill="#E6EDF3" font-weight="700">138.0</tspan> min</text>
+<text x="82" y="196" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="13" fill="#E6EDF3">EDSA</text>
+<text x="82" y="214" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="11" fill="#8B949E">13.8 min each</text>
+<polygon points="260.4,202.0 250.0,208.0 239.6,202.0 239.6,190.0 250.0,184.0 260.4,190.0" fill="#EA4335" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.000;0.037;0.9;1" dur="8s" repeatCount="indefinite"/></polygon>
+<polygon points="290.4,202.0 280.0,208.0 269.6,202.0 269.6,190.0 280.0,184.0 290.4,190.0" fill="#EA4335" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.019;0.056;0.9;1" dur="8s" repeatCount="indefinite"/></polygon>
+<polygon points="320.4,202.0 310.0,208.0 299.6,202.0 299.6,190.0 310.0,184.0 320.4,190.0" fill="#EA4335" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.037;0.075;0.9;1" dur="8s" repeatCount="indefinite"/></polygon>
+<polygon points="350.4,202.0 340.0,208.0 329.6,202.0 329.6,190.0 340.0,184.0 350.4,190.0" fill="#EA4335" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.056;0.094;0.9;1" dur="8s" repeatCount="indefinite"/></polygon>
+<polygon points="380.4,202.0 370.0,208.0 359.6,202.0 359.6,190.0 370.0,184.0 380.4,190.0" fill="#EA4335" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.075;0.112;0.9;1" dur="8s" repeatCount="indefinite"/></polygon>
+<polygon points="410.4,202.0 400.0,208.0 389.6,202.0 389.6,190.0 400.0,184.0 410.4,190.0" fill="#EA4335" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.094;0.131;0.9;1" dur="8s" repeatCount="indefinite"/></polygon>
+<polygon points="440.4,202.0 430.0,208.0 419.6,202.0 419.6,190.0 430.0,184.0 440.4,190.0" fill="#EA4335" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.112;0.150;0.9;1" dur="8s" repeatCount="indefinite"/></polygon>
+<polygon points="470.4,202.0 460.0,208.0 449.6,202.0 449.6,190.0 460.0,184.0 470.4,190.0" fill="#EA4335" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.131;0.169;0.9;1" dur="8s" repeatCount="indefinite"/></polygon>
+<polygon points="500.4,202.0 490.0,208.0 479.6,202.0 479.6,190.0 490.0,184.0 500.4,190.0" fill="#EA4335" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.150;0.188;0.9;1" dur="8s" repeatCount="indefinite"/></polygon>
+<polygon points="530.4,202.0 520.0,208.0 509.6,202.0 509.6,190.0 520.0,184.0 530.4,190.0" fill="#EA4335" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.169;0.206;0.9;1" dur="8s" repeatCount="indefinite"/></polygon>
+<text x="82" y="260" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="13" fill="#E6EDF3">C-5</text>
+<text x="82" y="278" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="11" fill="#8B949E">15.0 min each</text>
+<polygon points="260.4,266.0 250.0,272.0 239.6,266.0 239.6,254.0 250.0,248.0 260.4,254.0" fill="none" stroke="#30363D"/>
+<polygon points="290.4,266.0 280.0,272.0 269.6,266.0 269.6,254.0 280.0,248.0 290.4,254.0" fill="none" stroke="#30363D"/>
+<polygon points="320.4,266.0 310.0,272.0 299.6,266.0 299.6,254.0 310.0,248.0 320.4,254.0" fill="none" stroke="#30363D"/>
+<polygon points="350.4,266.0 340.0,272.0 329.6,266.0 329.6,254.0 340.0,248.0 350.4,254.0" fill="none" stroke="#30363D"/>
+<polygon points="380.4,266.0 370.0,272.0 359.6,266.0 359.6,254.0 370.0,248.0 380.4,254.0" fill="none" stroke="#30363D"/>
+<polygon points="410.4,266.0 400.0,272.0 389.6,266.0 389.6,254.0 400.0,248.0 410.4,254.0" fill="none" stroke="#30363D"/>
+<polygon points="440.4,266.0 430.0,272.0 419.6,266.0 419.6,254.0 430.0,248.0 440.4,254.0" fill="none" stroke="#30363D"/>
+<polygon points="470.4,266.0 460.0,272.0 449.6,266.0 449.6,254.0 460.0,248.0 470.4,254.0" fill="none" stroke="#30363D"/>
+<polygon points="500.4,266.0 490.0,272.0 479.6,266.0 479.6,254.0 490.0,248.0 500.4,254.0" fill="none" stroke="#30363D"/>
+<polygon points="530.4,266.0 520.0,272.0 509.6,266.0 509.6,254.0 520.0,248.0 530.4,254.0" fill="none" stroke="#30363D"/>
+<text x="82" y="324" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="13" fill="#E6EDF3">Skyway Stage 3</text>
+<text x="82" y="342" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="11" fill="#8B949E">20.0 min each</text>
+<polygon points="260.4,330.0 250.0,336.0 239.6,330.0 239.6,318.0 250.0,312.0 260.4,318.0" fill="none" stroke="#30363D"/>
+<polygon points="290.4,330.0 280.0,336.0 269.6,330.0 269.6,318.0 280.0,312.0 290.4,318.0" fill="none" stroke="#30363D"/>
+<polygon points="320.4,330.0 310.0,336.0 299.6,330.0 299.6,318.0 310.0,312.0 320.4,318.0" fill="none" stroke="#30363D"/>
+<polygon points="350.4,330.0 340.0,336.0 329.6,330.0 329.6,318.0 340.0,312.0 350.4,318.0" fill="none" stroke="#30363D"/>
+<polygon points="380.4,330.0 370.0,336.0 359.6,330.0 359.6,318.0 370.0,312.0 380.4,318.0" fill="none" stroke="#30363D"/>
+<polygon points="410.4,330.0 400.0,336.0 389.6,330.0 389.6,318.0 400.0,312.0 410.4,318.0" fill="none" stroke="#30363D"/>
+<polygon points="440.4,330.0 430.0,336.0 419.6,330.0 419.6,318.0 430.0,312.0 440.4,318.0" fill="none" stroke="#30363D"/>
+<polygon points="470.4,330.0 460.0,336.0 449.6,330.0 449.6,318.0 460.0,312.0 470.4,318.0" fill="none" stroke="#30363D"/>
+<polygon points="500.4,330.0 490.0,336.0 479.6,330.0 479.6,318.0 490.0,312.0 500.4,318.0" fill="none" stroke="#30363D"/>
+<polygon points="530.4,330.0 520.0,336.0 509.6,330.0 509.6,318.0 520.0,312.0 530.4,318.0" fill="none" stroke="#30363D"/>
+<rect x="620" y="120" width="520" height="270" rx="14" fill="#161B22" fill-opacity="0.9" stroke="#30363D"/>
+<text x="642" y="150" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="14" font-weight="700" fill="#F9AB00">SYSTEM OPTIMUM</text>
+<text x="1118" y="150" text-anchor="end" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="13" fill="#8B949E">total <tspan fill="#E6EDF3" font-weight="700">131.9</tspan> min</text>
+<text x="642" y="196" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="13" fill="#E6EDF3">EDSA</text>
+<text x="642" y="214" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="11" fill="#8B949E">12.7 min each</text>
+<polygon points="820.4,202.0 810.0,208.0 799.6,202.0 799.6,190.0 810.0,184.0 820.4,190.0" fill="#F9AB00" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.000;0.037;0.9;1" dur="8s" repeatCount="indefinite"/></polygon>
+<polygon points="850.4,202.0 840.0,208.0 829.6,202.0 829.6,190.0 840.0,184.0 850.4,190.0" fill="#F9AB00" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.019;0.056;0.9;1" dur="8s" repeatCount="indefinite"/></polygon>
+<polygon points="880.4,202.0 870.0,208.0 859.6,202.0 859.6,190.0 870.0,184.0 880.4,190.0" fill="#F9AB00" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.037;0.075;0.9;1" dur="8s" repeatCount="indefinite"/></polygon>
+<polygon points="910.4,202.0 900.0,208.0 889.6,202.0 889.6,190.0 900.0,184.0 910.4,190.0" fill="#F9AB00" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.056;0.094;0.9;1" dur="8s" repeatCount="indefinite"/></polygon>
+<polygon points="940.4,202.0 930.0,208.0 919.6,202.0 919.6,190.0 930.0,184.0 940.4,190.0" fill="#F9AB00" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.075;0.112;0.9;1" dur="8s" repeatCount="indefinite"/></polygon>
+<polygon points="970.4,202.0 960.0,208.0 949.6,202.0 949.6,190.0 960.0,184.0 970.4,190.0" fill="#F9AB00" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.094;0.131;0.9;1" dur="8s" repeatCount="indefinite"/></polygon>
+<polygon points="1000.4,202.0 990.0,208.0 979.6,202.0 979.6,190.0 990.0,184.0 1000.4,190.0" fill="#F9AB00" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.112;0.150;0.9;1" dur="8s" repeatCount="indefinite"/></polygon>
+<polygon points="1030.4,202.0 1020.0,208.0 1009.6,202.0 1009.6,190.0 1020.0,184.0 1030.4,190.0" fill="#F9AB00" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.131;0.169;0.9;1" dur="8s" repeatCount="indefinite"/></polygon>
+<polygon points="1060.4,202.0 1050.0,208.0 1039.6,202.0 1039.6,190.0 1050.0,184.0 1060.4,190.0" fill="none" stroke="#30363D"/>
+<polygon points="1090.4,202.0 1080.0,208.0 1069.6,202.0 1069.6,190.0 1080.0,184.0 1090.4,190.0" fill="none" stroke="#30363D"/>
+<text x="642" y="260" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="13" fill="#E6EDF3">C-5</text>
+<text x="642" y="278" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="11" fill="#8B949E">15.0 min each</text>
+<polygon points="820.4,266.0 810.0,272.0 799.6,266.0 799.6,254.0 810.0,248.0 820.4,254.0" fill="#F9AB00" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.062;0.100;0.9;1" dur="8s" repeatCount="indefinite"/></polygon>
+<polygon points="850.4,266.0 840.0,272.0 829.6,266.0 829.6,254.0 840.0,248.0 850.4,254.0" fill="#F9AB00" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.081;0.119;0.9;1" dur="8s" repeatCount="indefinite"/></polygon>
+<polygon points="880.4,266.0 870.0,272.0 859.6,266.0 859.6,254.0 870.0,248.0 880.4,254.0" fill="none" stroke="#30363D"/>
+<polygon points="910.4,266.0 900.0,272.0 889.6,266.0 889.6,254.0 900.0,248.0 910.4,254.0" fill="none" stroke="#30363D"/>
+<polygon points="940.4,266.0 930.0,272.0 919.6,266.0 919.6,254.0 930.0,248.0 940.4,254.0" fill="none" stroke="#30363D"/>
+<polygon points="970.4,266.0 960.0,272.0 949.6,266.0 949.6,254.0 960.0,248.0 970.4,254.0" fill="none" stroke="#30363D"/>
+<polygon points="1000.4,266.0 990.0,272.0 979.6,266.0 979.6,254.0 990.0,248.0 1000.4,254.0" fill="none" stroke="#30363D"/>
+<polygon points="1030.4,266.0 1020.0,272.0 1009.6,266.0 1009.6,254.0 1020.0,248.0 1030.4,254.0" fill="none" stroke="#30363D"/>
+<polygon points="1060.4,266.0 1050.0,272.0 1039.6,266.0 1039.6,254.0 1050.0,248.0 1060.4,254.0" fill="none" stroke="#30363D"/>
+<polygon points="1090.4,266.0 1080.0,272.0 1069.6,266.0 1069.6,254.0 1080.0,248.0 1090.4,254.0" fill="none" stroke="#30363D"/>
+<text x="642" y="324" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="13" fill="#E6EDF3">Skyway Stage 3</text>
+<text x="642" y="342" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="11" fill="#8B949E">20.0 min each</text>
+<polygon points="820.4,330.0 810.0,336.0 799.6,330.0 799.6,318.0 810.0,312.0 820.4,318.0" fill="none" stroke="#30363D"/>
+<polygon points="850.4,330.0 840.0,336.0 829.6,330.0 829.6,318.0 840.0,312.0 850.4,318.0" fill="none" stroke="#30363D"/>
+<polygon points="880.4,330.0 870.0,336.0 859.6,330.0 859.6,318.0 870.0,312.0 880.4,318.0" fill="none" stroke="#30363D"/>
+<polygon points="910.4,330.0 900.0,336.0 889.6,330.0 889.6,318.0 900.0,312.0 910.4,318.0" fill="none" stroke="#30363D"/>
+<polygon points="940.4,330.0 930.0,336.0 919.6,330.0 919.6,318.0 930.0,312.0 940.4,318.0" fill="none" stroke="#30363D"/>
+<polygon points="970.4,330.0 960.0,336.0 949.6,330.0 949.6,318.0 960.0,312.0 970.4,318.0" fill="none" stroke="#30363D"/>
+<polygon points="1000.4,330.0 990.0,336.0 979.6,330.0 979.6,318.0 990.0,312.0 1000.4,318.0" fill="none" stroke="#30363D"/>
+<polygon points="1030.4,330.0 1020.0,336.0 1009.6,330.0 1009.6,318.0 1020.0,312.0 1030.4,318.0" fill="none" stroke="#30363D"/>
+<polygon points="1060.4,330.0 1050.0,336.0 1039.6,330.0 1039.6,318.0 1050.0,312.0 1060.4,318.0" fill="none" stroke="#30363D"/>
+<polygon points="1090.4,330.0 1080.0,336.0 1069.6,330.0 1069.6,318.0 1080.0,312.0 1090.4,318.0" fill="none" stroke="#30363D"/>
+<text x="600.0" y="430" text-anchor="middle" font-family="-apple-system,'Segoe UI','Helvetica Neue',Arial,sans-serif" font-size="20" font-weight="800" fill="#E6EDF3">PoA = 138.0 / 131.9 = <tspan fill="#F9AB00">1.046</tspan><tspan font-size="14" fill="#8B949E" font-weight="400">   ·  coordination can save 4.4% here</tspan></text>
+<text x="1176" y="456" text-anchor="end" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="10" fill="#8B949E">illustrative free-flow times · see "On the analytical corridor parameters"</text>
+</svg>

@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1200" height="430" viewBox="0 0 1200 430" role="img" aria-label="How the Hive Path Distribution Mechanism decides: measure, price, filter, choose">
+<title>How the Hive Path Distribution Mechanism decides: measure, price, filter, choose</title>
+<defs>
+  <pattern id="honey" width="34.64" height="60" patternUnits="userSpaceOnUse">
+    <path d="M17.32 0L34.64 10V30L17.32 40L0 30V10Z M17.32 40V60" fill="none" stroke="#F9AB00" stroke-width="1" stroke-opacity="0.07"/>
+  </pattern>
+  <pattern id="honeyBright" width="34.64" height="60" patternUnits="userSpaceOnUse">
+    <path d="M17.32 0L34.64 10V30L17.32 40L0 30V10Z M17.32 40V60" fill="none" stroke="#FFD166" stroke-width="1.2" stroke-opacity="0.55"/>
+  </pattern>
+  <radialGradient id="spot"><stop offset="0" stop-color="#fff" stop-opacity="1"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+  <filter id="glow" x="-80%" y="-80%" width="260%" height="260%">
+    <feGaussianBlur stdDeviation="3" result="b"/>
+    <feMerge><feMergeNode in="b"/><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+  </filter>
+</defs>
+<rect width="1200" height="430" rx="18" fill="#0D1117"/>
+<rect width="1200" height="430" rx="18" fill="url(#honey)"/>
+<mask id="sweep"><rect width="1200" height="430" fill="#000"/>
+  <circle cy="194" r="258" fill="url(#spot)">
+    <animate attributeName="cx" values="-300;1500" dur="11s" repeatCount="indefinite"/>
+  </circle>
+</mask>
+<rect width="1200" height="430" rx="18" fill="url(#honeyBright)" mask="url(#sweep)"/>
+<rect x="0.5" y="0.5" width="1199" height="429" rx="18" fill="none" stroke="#30363D"/>
+<polygon points="65.4,64.0 55.0,70.0 44.6,64.0 44.6,52.0 55.0,46.0 65.4,52.0" fill="#F9AB00" filter="url(#glow)"/>
+<text x="78" y="66" font-family="-apple-system,'Segoe UI','Helvetica Neue',Arial,sans-serif" font-size="24" font-weight="800" fill="#E6EDF3">HOW THE <tspan fill="#F9AB00">HIVE</tspan> DECIDES</text>
+<text x="78" y="40" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="11" letter-spacing="2" fill="#F9AB00">HIVE PATH DISTRIBUTION MECHANISM</text>
+<text x="44" y="96" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="14" fill="#8B949E">Every 10 seconds, for every departing driver, on the corridors precomputed for their trip.</text>
+<text x="1156" y="66" text-anchor="end" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="12" fill="#8B949E">pipeline/run_scenarios.py</text>
+<path id="loop" d="M 170 240 H 1028" fill="none"/>
+<line x1="170" y1="240" x2="1028" y2="240" stroke="#30363D" stroke-width="3"/>
+<line x1="170" y1="240" x2="1028" y2="240" stroke="#F9AB00" stroke-opacity="0.6" stroke-width="3" stroke-dasharray="10 12"><animate attributeName="stroke-dashoffset" values="0;-44" dur="1s" repeatCount="indefinite"/></line>
+<path d="M 1028 304 C 1028 370, 170 370, 170 304" fill="none" stroke="#F9AB00" stroke-opacity="0.35" stroke-width="2" stroke-dasharray="6 8"><animate attributeName="stroke-dashoffset" values="0;28" dur="1s" repeatCount="indefinite"/></path>
+<text x="599.0" y="364" text-anchor="middle" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="12" fill="#8B949E">assignments change the roads → the next measurement sees it</text>
+<g filter="url(#glow)"><circle r="5" fill="#FFD166"/><circle r="11.0" fill="#FFD166" opacity="0.18"/><animateMotion dur="4.00s" begin="0.00s" repeatCount="indefinite" rotate="auto"><mpath xlink:href="#loop"/></animateMotion></g>
+<polygon points="213.3,265.0 170.0,290.0 126.7,265.0 126.7,215.0 170.0,190.0 213.3,215.0" fill="#161B22" stroke="#F9AB00" stroke-width="2"/>
+<polygon points="213.3,265.0 170.0,290.0 126.7,265.0 126.7,215.0 170.0,190.0 213.3,215.0" fill="none" stroke="#FFD166" stroke-width="3" opacity="0" filter="url(#glow)"><animate attributeName="opacity" values="0;1;0;0" keyTimes="0;0.1;0.25;1" dur="4s" begin="0s" repeatCount="indefinite"/></polygon>
+<text x="170" y="245" text-anchor="middle" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="14" font-weight="700" fill="#F9AB00">MEASURE</text>
+<text x="170" y="148" text-anchor="middle" font-family="-apple-system,'Segoe UI','Helvetica Neue',Arial,sans-serif" font-size="16" font-weight="700" fill="#E6EDF3">observed travel time</text>
+<text x="170" y="168" text-anchor="middle" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="12" fill="#8B949E">per corridor from SUMO,</text>
+<text x="170" y="184" text-anchor="middle" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="12" fill="#8B949E">smoothed 0.4 on newest</text>
+<polygon points="499.3,265.0 456.0,290.0 412.7,265.0 412.7,215.0 456.0,190.0 499.3,215.0" fill="#161B22" stroke="#F9AB00" stroke-width="2"/>
+<polygon points="499.3,265.0 456.0,290.0 412.7,265.0 412.7,215.0 456.0,190.0 499.3,215.0" fill="none" stroke="#FFD166" stroke-width="3" opacity="0" filter="url(#glow)"><animate attributeName="opacity" values="0;1;0;0" keyTimes="0;0.1;0.25;1" dur="4s" begin="1s" repeatCount="indefinite"/></polygon>
+<text x="456" y="245" text-anchor="middle" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="14" font-weight="700" fill="#F9AB00">PRICE</text>
+<text x="456" y="148" text-anchor="middle" font-family="-apple-system,'Segoe UI','Helvetica Neue',Arial,sans-serif" font-size="16" font-weight="700" fill="#E6EDF3">marginal cost</text>
+<text x="456" y="168" text-anchor="middle" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="12" fill="#8B949E">MC = T0 + (n+1)(T − T0)</text>
+<text x="456" y="184" text-anchor="middle" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="12" fill="#8B949E">what you cost everyone else</text>
+<polygon points="785.3,265.0 742.0,290.0 698.7,265.0 698.7,215.0 742.0,190.0 785.3,215.0" fill="#161B22" stroke="#F9AB00" stroke-width="2"/>
+<polygon points="785.3,265.0 742.0,290.0 698.7,265.0 698.7,215.0 742.0,190.0 785.3,215.0" fill="none" stroke="#FFD166" stroke-width="3" opacity="0" filter="url(#glow)"><animate attributeName="opacity" values="0;1;0;0" keyTimes="0;0.1;0.25;1" dur="4s" begin="2s" repeatCount="indefinite"/></polygon>
+<text x="742" y="245" text-anchor="middle" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="14" font-weight="700" fill="#F9AB00">FILTER</text>
+<text x="742" y="148" text-anchor="middle" font-family="-apple-system,'Segoe UI','Helvetica Neue',Arial,sans-serif" font-size="16" font-weight="700" fill="#E6EDF3">fairness bound ε = 0.25</text>
+<text x="742" y="168" text-anchor="middle" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="12" fill="#8B949E">drop corridors slower than</text>
+<text x="742" y="184" text-anchor="middle" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="12" fill="#8B949E">1.25 × the best for you</text>
+<polygon points="1071.3,265.0 1028.0,290.0 984.7,265.0 984.7,215.0 1028.0,190.0 1071.3,215.0" fill="#161B22" stroke="#F9AB00" stroke-width="2"/>
+<polygon points="1071.3,265.0 1028.0,290.0 984.7,265.0 984.7,215.0 1028.0,190.0 1071.3,215.0" fill="none" stroke="#FFD166" stroke-width="3" opacity="0" filter="url(#glow)"><animate attributeName="opacity" values="0;1;0;0" keyTimes="0;0.1;0.25;1" dur="4s" begin="3s" repeatCount="indefinite"/></polygon>
+<text x="1028" y="245" text-anchor="middle" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="14" font-weight="700" fill="#F9AB00">CHOOSE</text>
+<text x="1028" y="148" text-anchor="middle" font-family="-apple-system,'Segoe UI','Helvetica Neue',Arial,sans-serif" font-size="16" font-weight="700" fill="#E6EDF3">softmax(−η · MC)</text>
+<text x="1028" y="168" text-anchor="middle" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="12" fill="#8B949E">η = 0.03 keeps real mass</text>
+<text x="1028" y="184" text-anchor="middle" font-family="'SF Mono','JetBrains Mono','Cascadia Code',Consolas,'Liberation Mono',Menlo,monospace" font-size="12" fill="#8B949E">on the alternatives</text>
+</svg>
