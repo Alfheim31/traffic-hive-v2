@@ -10,3 +10,5 @@ app/assets/sim/*.bin
 data/cache/
 data/eval/
 data/demo_runs/
+data/models/
+data/marl_smoke/
