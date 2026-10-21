@@ -102,6 +102,33 @@ And when we push the network well past saturation (~3,400 vehicles over 25 minut
 </p>
 
 <details>
+<summary><b>🤖 Learning the split: Traffic Hive MARL</b></summary>
+<br/>
+
+The rule above uses a fixed formula. `pipeline/marl.py` replaces it with a policy learned by **multi-agent reinforcement learning**. Each of the 16 origin–destination pairs is one agent. Every 10 s each agent picks how its departing drivers are split across its three corridors (15 possible splits). The agents are trained together in SUMO with **MAPPO**: a shared actor that each agent runs on its own corridors (decentralised execution), plus a centralised critic that sees the whole network during training. The reward is cooperative. Each agent pays half its own vehicle-seconds and half the network average, plus the same ε = 0.25 fairness penalty the rule uses. Vehicles left stranded at the end of an episode also cost the agent. Full formulation: [`docs/marl-methodology.md`](docs/marl-methodology.md).
+
+Five held-out seeds, 1,000 vehicles over 15 minutes, 30 minutes of clearance. The table shows **total vehicle-hours**, which counts every vehicle, finished or not:
+
+| | UE | Hive rule | Hive MARL |
+|---|---|---|---|
+| No obstacles | 145.5 | **144.5** | 149.5 |
+| Twelve España obstacles | 181.1 | 185.2 | **175.7** |
+
+With obstacles, the learned policy beats the rule in **5 of 5 seeds** (by 2–9 %) and UE in 4 of 5. It also finishes more trips (94.5 % against 93.0 %) and gives the most even road load. Without obstacles it spreads traffic the most but doesn't lower vehicle-hours. Details and per-seed numbers: [`docs/marl-results.md`](docs/marl-results.md).
+
+```bash
+python -m pipeline.marl --gradcheck          # verify the NumPy backprop
+python -m pipeline.marl train                # 4 SUMO episodes per iteration; --resume to continue
+python -m pipeline.marl plot                 # figures/fig7_marl_learning_curve.png
+python -m pipeline.evaluate --vehicles 1000 --rules ue_corridor hive_corridor marl_corridor \
+    --obstacles examples/obstacles_espana_demo.json
+```
+
+The trained policy ships as `models/marl_policy.npz` (62 KB, NumPy only, no PyTorch needed) and runs as the `marl_corridor` scenario.
+
+</details>
+
+<details>
 <summary><b>🧪 The honest part</b></summary>
 <br/>
 
@@ -110,6 +137,8 @@ A thesis is only as good as the results it doesn't hide, so here are ours:
 - **Not every driver wins.** About half of individual vehicles are faster under Hive than under UE. A system-optimal rule *can't* make everyone faster: some take a slightly longer corridor so that the rest save more, and ε is what bounds that sacrifice.
 - **Hive needs a jam to help.** On a small uncongested grid, HPDM *loses* to plain actuated control: mean time loss rose 5.6 % and mean route length went from 997 m to 1,019 m. With no congestion to redistribute, spreading drivers only adds detour distance. HPDM wins once mainline queueing costs more than the detour. Locating that crossover with a demand sweep is still on our list.
 - **Our Synchronized System Optimum didn't work.** We tried adding a penalty on arrival-time variance (λ). No value of λ both binds and still distributes demand: it either does nothing or collapses everyone onto one corridor. We report it as a negative result (figure 3 below).
+- **Per-trip averages flatter Hive.** They only count finished trips, and Hive leaves more vehicles unfinished. On **total vehicle-hours** with 30 minutes of clearance (the `pipeline.evaluate` default now), the Hive rule ties UE without obstacles (144.5 vs 145.5) and is about 2 % worse with them. Quote per-trip gains together with completion, and use vehicle-hours for network-wide claims. That gap is what the MARL policy closes with obstacles.
+- **The rebuilt network is an approximation.** These numbers use a SUMO network rebuilt from `net.json`, whose junction connections netconvert guesses again. Re-run on the OSM-built `corridor.net.xml` (and retrain MARL on it) before the manuscript quotes them.
 - **The stress run is one seed**, and the two rules finished different shares of trips (36 % vs 48 %), so treat its per-trip averages as indicative. The five-seed table above is the result we stand behind. Hive reduced time loss in 9 of those 10 seeded runs.
 
 </details>
@@ -130,6 +159,9 @@ A thesis is only as good as the results it doesn't hide, so here are ours:
 <tr>
 <td><img src="figures/fig5_calibration.png" alt="Volume-delay calibration" /><br/><sub><b>Fig 5.</b> Volume-delay curve fitted against SUMO observations.</sub></td>
 <td><img src="figures/fig6_queue_timeseries.png" alt="Queue formation over the run" /><br/><sub><b>Fig 6.</b> Queue formation over the run, all four rules.</sub></td>
+</tr>
+<tr>
+<td colspan="2"><img src="figures/fig7_marl_learning_curve.png" alt="MARL learning curve" /><br/><sub><b>Fig 7.</b> MAPPO learning curve. Returns rise from random-split level to the heuristic rule's in about 65 iterations; phase 2 lengthens the episode tail.</sub></td>
 </tr>
 </table>
 
@@ -242,7 +274,7 @@ New to the setup? [`SETUP.md`](SETUP.md) walks through it with GitHub Desktop + 
 | `ue` | gap-based | greedy rerouting | what navigation apps do |
 | `hive` | gap-based | HPDM softmax | the proposed rule |
 
-All four share one network, one demand file and one seed. Only the rule changes, and that isolation is what makes the comparison defensible. The corridor versions (`ue_corridor`, `hive_corridor`) assign over corridors precomputed by `pipeline/corridors.py`, which is both the formulation the manuscript describes and the reason thousands of vehicles stay tractable. There's also a `hive_sue` ablation: HPDM over plain travel time, kept to show that it degenerates into Stochastic User Equilibrium.
+All four share one network, one demand file and one seed. Only the rule changes, and that isolation is what makes the comparison defensible. The corridor versions (`ue_corridor`, `hive_corridor`) assign over corridors precomputed by `pipeline/corridors.py`, which is both the formulation the manuscript describes and the reason thousands of vehicles stay tractable. There's also a `hive_sue` ablation: HPDM over plain travel time, kept to show that it degenerates into Stochastic User Equilibrium. `marl_corridor` swaps the HPDM formula for the learned MAPPO policy over the same corridors.
 
 </details>
 
@@ -296,8 +328,10 @@ Absent vehicles are encoded `x = y = -32768`. `flags` bit 0 marks a stopped vehi
 |---|---|---|
 | `pipeline/theory.py` | NumPy | Exhaustive enumeration of UE, SO, SSO and the constrained optimum; Price of Anarchy |
 | `pipeline/calibrate.py` | SciPy | Fits BPR volume-delay parameters to SUMO observations by nonlinear least squares |
-| `pipeline/evaluate.py` | NumPy | Replicated UE vs Hive runs: completion, delay, Gini, entropy, win rate |
+| `pipeline/evaluate.py` | NumPy | Replicated N-way runs (`--rules`): vehicle-hours, completion, delay, Gini, entropy, paired win rate |
 | `pipeline/figures.py` | Matplotlib | Regenerates every manuscript figure from data files |
+| `pipeline/marl_env.py` | TraCI | Multi-agent corridor environment: observations, cooperative reward, stranded-vehicle cost |
+| `pipeline/marl.py` | NumPy | MAPPO trainer (shared actor, centralised critic, GAE, PPO clip), learning-curve plot, gradient check |
 
 **Calibration.** `β = 0.15` and `n = 4` are US Bureau of Public Roads defaults. Fitting them against this network gave `n = 1.80`, `β = 0.384`, with R² 0.9974 against 0.9082 for the defaults: the network congests more gradually, but from a lower threshold than the standard assumes. Re-run `make calibrate` after any network change and report the fitted values, not the defaults.
 
@@ -318,6 +352,8 @@ Absent vehicles are encoded `x = y = -32768`. `flags` bit 0 marks a stopped vehi
 - [x] Run-on-demand server with disk cache
 - [x] Corridor routing on measured costs, replicated evaluation
 - [x] Roadside obstacles and the Hive Out driver view
+- [x] Multi-agent RL (MAPPO) corridor policy, evaluated on total vehicle-hours
+- [ ] Retrain and re-evaluate MARL on the OSM-built network, 10 seeds
 - [ ] React Native playback app (Skia canvas, transport controls)
 - [ ] Results panel wired to `metrics.json`
 - [ ] Demand sweep for the HPDM crossover plot

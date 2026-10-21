@@ -85,6 +85,17 @@ SCENARIOS: dict[str, Scenario] = {
             epsilon=0.25,
             reroute_period=10,
         ),
+        # Learned corridor assignment: 16 OD-pair agents trained with MAPPO
+        # (pipeline.marl). Same corridors and decision epoch as the rules
+        # above; the split is chosen by the trained policy instead of a
+        # formula. Needs models/marl_policy.npz.
+        Scenario(
+            "marl_corridor",
+            "actuated",
+            "corridor_marl",
+            "Traffic Hive (MARL)",
+            reroute_period=10,
+        ),
         Scenario(
             "ue_corridor",
             "actuated",
@@ -514,6 +525,59 @@ class CorridorController:
         }
 
 
+class MarlController:
+    """Corridor assignment by the trained MAPPO policy (see pipeline.marl).
+
+    Every 10 s each OD-pair agent observes its corridors and the network,
+    and the shared policy picks the split for its next departures. The
+    observation, split and assignment code is the same CorridorCore used in
+    training, so the policy sees exactly what it was trained on. Actions are
+    greedy (most probable split) for reproducible evaluation.
+    """
+
+    POLICY = Path("models/marl_policy.npz")
+
+    def __init__(self, seed: int, corridors_path: Path, horizon: int, routes: Path) -> None:
+        import numpy as np
+        from pipeline.marl import Policy
+        from pipeline.marl_env import CorridorCore, EPOCH_S
+        if not self.POLICY.exists():
+            sys.exit("marl_corridor needs a trained policy at models/marl_policy.npz. "
+                     "Train one with: python -m pipeline.marl train")
+        self.np = np
+        self.policy = Policy.load(self.POLICY)
+        self.core = CorridorCore(corridors_path, horizon, seed=seed)
+        self.core.load_schedule(routes)
+        if self.core.obs_dim != self.policy.p[0].shape[0]:
+            sys.exit("models/marl_policy.npz was trained on a different corridors.json; retrain it.")
+        self.epoch = EPOCH_S
+        self._next = EPOCH_S
+        self._last = 0.0
+        self.rng = np.random.default_rng(seed)
+
+    def step(self, traci, t: int) -> None:
+        now = traci.simulation.getTime()
+        self.core.on_step(traci, now, now - self._last)
+        self._last = now
+        if now + 1e-6 >= self._next:
+            self._next += self.epoch
+            self.core.measure(traci)
+            obs, _ = self.core.observations(now)
+            actions, _ = self.policy.act(obs, self.rng, greedy=True)
+            self.core.apply(actions)
+
+    def summary(self) -> dict:
+        import math
+        tot = self.core.assigned.sum(0)
+        share = [round(float(x), 4) for x in tot / max(1.0, tot.sum())]
+        nz = [x for x in share if x > 0]
+        ent = -sum(x * math.log(x) for x in nz) / math.log(self.core.k) if len(nz) > 1 else 0.0
+        return {"assigned": int(tot.sum()), "entry_points": self.core.n, "spread_entropy": round(ent, 4),
+                "split": [int(x) for x in tot], "share": share,
+                "per_origin": self.core.assigned.astype(int).tolist(),
+                "policy_iteration": self.policy.meta.get("iteration")}
+
+
 class RoutingController:
     """Applies a routing rule to in-network vehicles each decision epoch."""
 
@@ -709,12 +773,18 @@ def run(
     net_path: Path = NET,
     fcd_period: float = 0.5,
     obstacles=None,
+    clearance: int = 600,
 ) -> dict[str, Path]:
     """Run one scenario headless and return the paths of its outputs.
 
     `obstacles` is a path, JSON string or list of obstacle dicts (see
     pipeline.obstacles). When given, they are applied through TraCI during
     the run, so their effect is in the trajectories rather than drawn on top.
+
+    `clearance` is how long the run continues after the demand window so
+    vehicles already in the network can finish. Comparisons between rules
+    need it long enough that nearly every trip completes; otherwise per-trip
+    averages exclude stranded vehicles and favour whichever rule strands more.
     """
     import traci
     from pipeline import obstacles as obstacle_model
@@ -762,7 +832,7 @@ def run(
         "-r", str(routes),
         "-a", f"{tls_add},{tls_log}",
         "--begin", "0",
-        "--end", str(horizon + 600),
+        "--end", str(horizon + clearance),
         "--step-length", "0.5",
         "--fcd-output", str(paths["fcd"]),
         "--device.fcd.period", str(fcd_period),
@@ -791,6 +861,8 @@ def run(
         traci.start(cmd)
         if scenario.routing == "shortest":
             controller = None
+        elif scenario.routing == "corridor_marl":
+            controller = MarlController(seed, corridors_path, horizon, routes)
         elif scenario.routing.startswith("corridor"):
             controller = CorridorController(scenario, seed, corridors_path)
         else:
@@ -805,11 +877,11 @@ def run(
                 if controller is not None:
                     controller.step(traci, int(now))
                 step += 1
-                if step > (horizon + 600) * 2:
+                if step > (horizon + clearance) * 2:
                     break
         finally:
             traci.close()
-        if isinstance(controller, CorridorController):
+        if isinstance(controller, (CorridorController, MarlController)):
             s = controller.summary()
             print(f"[{scenario.name}] corridor split {s['split']} "
                   f"shares {s['share']}")
