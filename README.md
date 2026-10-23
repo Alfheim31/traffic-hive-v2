@@ -89,10 +89,10 @@ Selfishness sends all ten drivers down EDSA. Moving just two of them to C-5 make
 
 ### 📊 What we measured
 
-`python -m pipeline.evaluate` runs both rules on identical demand across several seeds. On the rebuilt España network with 1,000 vehicles over a 15-minute demand window:
+`python -m pipeline.evaluate` runs the rules on identical demand across several seeds. On the OSM-built España network with 1,000 vehicles over a 15-minute demand window, 10 seeds:
 
 <p align="center">
-  <img src="docs/readme/results.svg" width="100%" alt="Five-seed means, UE versus Hive: time loss 244 to 216 s, waiting 115 to 97 s, peak queue 236 to 202, Gini 0.783 to 0.734, busiest 10 percent of segments 67.5 to 61.3 percent, corridor split entropy 0.74 to 0.90" />
+  <img src="docs/readme/results.svg" width="100%" alt="Ten-seed means on the OSM network, UE versus Hive: time loss 174 to 161 s, waiting 76 to 69 s, peak queue 188 to 170, Gini 0.717 to 0.684, busiest 10 percent of segments 57.2 to 53.3 percent, corridor split entropy 0.76 to 0.86" />
 </p>
 
 And when we push the network well past saturation (~3,400 vehicles over 25 minutes), the gap gets wider. Hive keeps queues lower for almost the whole run and finishes more trips:
@@ -107,14 +107,18 @@ And when we push the network well past saturation (~3,400 vehicles over 25 minut
 
 The rule above uses a fixed formula. `pipeline/marl.py` replaces it with a policy learned by **multi-agent reinforcement learning**. Each of the 16 origin–destination pairs is one agent. Every 10 s each agent picks how its departing drivers are split across its three corridors (15 possible splits). The agents are trained together in SUMO with **MAPPO**: a shared actor that each agent runs on its own corridors (decentralised execution), plus a centralised critic that sees the whole network during training. The reward is cooperative. Each agent pays half its own vehicle-seconds and half the network average, plus the same ε = 0.25 fairness penalty the rule uses. Vehicles left stranded at the end of an episode also cost the agent. Full formulation: [`docs/marl-methodology.md`](docs/marl-methodology.md).
 
-Five held-out seeds, 1,000 vehicles over 15 minutes, 30 minutes of clearance. The table shows **total vehicle-hours**, which counts every vehicle, finished or not:
+We tried it in two ways, both trained and tested on the OSM-built network. **Total vehicle-hours** counts every vehicle, finished or not; ten held-out seeds, 1,000 vehicles over 15 minutes, 30 minutes of clearance:
 
-| | UE | Hive rule | Hive MARL |
-|---|---|---|---|
-| No obstacles | 145.5 | **144.5** | 149.5 |
-| Twelve España obstacles | 181.1 | 185.2 | **175.7** |
+| | UE | Hive rule | Learned split (MARL) | Hive + MARL (residual) |
+|---|---|---|---|---|
+| No obstacles | 114.4 | **112.9** | 124.8 | 113.6 |
+| Twelve España obstacles | 163.6 | 163.4 | 196.1 | **161.6** |
+| Unfinished vehicles, with obstacles | 63.7 | 57.4 | 85.5 | **53.6** |
 
-With obstacles, the learned policy beats the rule in **5 of 5 seeds** (by 2–9 %) and UE in 4 of 5. It also finishes more trips (94.5 % against 93.0 %) and gives the most even road load. Without obstacles it spreads traffic the most but doesn't lower vehicle-hours. Details and per-seed numbers: [`docs/marl-results.md`](docs/marl-results.md).
+- **Learned split** (agents choose the split from scratch): worse than the rule in all 10 seeds, by 10 % without obstacles and 20 % with them. Trained on 5-minute episodes it matches the rule (and edges it in 3 of 4 seeds), but in 15-minute runs it moves traffic onto the second corridor (≈ 41 / 43 / 16 % instead of 65 / 25 / 10 %) and loses. Fine-tuning on 15-minute episodes narrowed the gap to 5 % and 10 % but did not close it.
+- **Hive + MARL** (agents nudge the rule): statistically tied with the rule. It wins 5 of 10 seeds without obstacles (0.6 % more vehicle-hours on average) and 7 of 10 with them (1.1 % fewer vehicle-hours and 6.6 % fewer unfinished vehicles), but seed-to-seed spread is ±2.5–3.6 %, so neither difference is significant (paired t = −0.8 and 0.9).
+
+The conclusion we draw: on this corridor the Hive rule already captures most of what reassignment can gain. Every method lands within about 2 % of the others on vehicle-hours, which is consistent with the narrow price-of-anarchy window above. Details and per-seed numbers: [`docs/marl-results.md`](docs/marl-results.md).
 
 ```bash
 python -m pipeline.marl --gradcheck          # verify the NumPy backprop
@@ -137,7 +141,7 @@ python -m pipeline.evaluate --vehicles 1000 --rules ue_corridor hive_corridor hi
     --obstacles examples/obstacles_espana_demo.json
 ```
 
-The residual policy ships as `models/marl_residual_policy.npz` and runs as the `hive_marl_corridor` scenario. It has been trained for 150 iterations but **not yet evaluated** against the rule, so there is no results row for it above. See "The honest part" for what the learning curve does and doesn't show.
+The residual policy ships as `models/marl_residual_policy.npz` and runs as the `hive_marl_corridor` scenario. Its results are the last column of the table above.
 
 </details>
 
@@ -148,12 +152,12 @@ The residual policy ships as `models/marl_residual_policy.npz` and runs as the `
 A thesis is only as good as the results it doesn't hide, so here are ours:
 
 - **Not every driver wins.** About half of individual vehicles are faster under Hive than under UE. A system-optimal rule *can't* make everyone faster: some take a slightly longer corridor so that the rest save more, and ε is what bounds that sacrifice.
-- **Hive needs a jam to help.** On a small uncongested grid, HPDM *loses* to plain actuated control: mean time loss rose 5.6 % and mean route length went from 997 m to 1,019 m. With no congestion to redistribute, spreading drivers only adds detour distance. HPDM wins once mainline queueing costs more than the detour. Locating that crossover with a demand sweep is still on our list.
+- **Hive needs a jam to help.** On a small uncongested grid, HPDM *loses* to plain actuated control: mean time loss rose 5.6 % and mean route length went from 997 m to 1,019 m. With no congestion to redistribute, spreading drivers only adds detour distance. HPDM wins once mainline queueing costs more than the detour.
 - **Our Synchronized System Optimum didn't work.** We tried adding a penalty on arrival-time variance (λ). No value of λ both binds and still distributes demand: it either does nothing or collapses everyone onto one corridor. We report it as a negative result (figure 3 below).
-- **Per-trip averages flatter Hive.** They only count finished trips, and Hive leaves more vehicles unfinished. On **total vehicle-hours** with 30 minutes of clearance (the `pipeline.evaluate` default now), the Hive rule ties UE without obstacles (144.5 vs 145.5) and is about 2 % worse with them. Quote per-trip gains together with completion, and use vehicle-hours for network-wide claims. That gap is what the MARL policy closes with obstacles.
-- **The rebuilt network is an approximation.** These numbers use a SUMO network rebuilt from `net.json`, whose junction connections netconvert guesses again. Re-run on the OSM-built `corridor.net.xml` (and retrain MARL on it) before the manuscript quotes them.
-- **Residual MARL hasn't shown it learns anything yet.** Over 150 iterations its mean training return moved sideways (about −158 over the first ten iterations, about −157 over the last ten), and the policy is still close to random among its 13 actions (entropy 1.86 against a maximum of 2.56). Those returns come from 900–1,100-vehicle episodes, so they aren't comparable with the split policy's. Until `pipeline.evaluate` puts `hive_marl_corridor` next to `hive_corridor` on the same seeds, we make no claim that the agents improve the rule.
-- **The stress run is one seed**, and the two rules finished different shares of trips (36 % vs 48 %), so treat its per-trip averages as indicative. The five-seed table above is the result we stand behind. Hive reduced time loss in 9 of those 10 seeded runs.
+- **Per-trip gains are bigger than network-wide gains.** Hive cuts time loss per trip in 10 of 10 seeds (−8 %), but total vehicle-hours only by about 1 % without obstacles (6 of 10 seeds) and not at all with them (5 of 10). Quote per-trip gains together with completion, and use vehicle-hours for network-wide claims.
+- **Learning did not beat the rule.** Neither MARL design improves significantly on the hand-designed rule (table above). The learned split policy is also sensitive to episode length: a policy trained on 5-minute episodes does not transfer to 15-minute runs.
+- **Hive + MARL barely learned.** Its training return moved sideways over 150 iterations (about −158 over the first ten, −157 over the last ten), and its action entropy only fell from 2.2 to 1.9 (maximum 2.56). The result above is close to the rule because the agents mostly leave it alone, not because they found a better policy.
+- **The stress run is one seed**, and the two rules finished different shares of trips (36 % vs 48 %), so treat its per-trip averages as indicative. The ten-seed results above are the ones we stand behind.
 
 </details>
 
@@ -175,8 +179,8 @@ A thesis is only as good as the results it doesn't hide, so here are ours:
 <td><img src="figures/fig6_queue_timeseries.png" alt="Queue formation over the run" /><br/><sub><b>Fig 6.</b> Queue formation over the run, all four rules.</sub></td>
 </tr>
 <tr>
-<td><img src="figures/fig7_marl_learning_curve.png" alt="MARL learning curve" /><br/><sub><b>Fig 7.</b> MAPPO learning curve (split mode). Returns rise from random-split level to the heuristic rule's in about 65 iterations; phase 2 lengthens the episode tail.</sub></td>
-<td><img src="figures/fig8_marl_residual_learning_curve.png" alt="Residual MARL learning curve" /><br/><sub><b>Fig 8.</b> Residual-mode learning curve. Flat over 150 iterations: no evidence yet that the price offsets improve on the rule.</sub></td>
+<td><img src="figures/fig7_marl_learning_curve.png" alt="MARL learning curve" /><br/><sub><b>Fig 7.</b> MAPPO learning curve (split mode). Trained on the OSM network: returns rise from −78 and level off near −46 after about 75 iterations.</sub></td>
+<td><img src="figures/fig8_marl_residual_learning_curve.png" alt="Residual MARL learning curve" /><br/><sub><b>Fig 8.</b> Residual-mode learning curve. Flat over 150 iterations; evaluated, it ties the rule (table above).</sub></td>
 </tr>
 </table>
 
@@ -348,7 +352,7 @@ Absent vehicles are encoded `x = y = -32768`. `flags` bit 0 marks a stopped vehi
 | `pipeline/marl_env.py` | TraCI | Multi-agent corridor environment: observations, cooperative reward, stranded-vehicle cost; `split` and `residual` action modes |
 | `pipeline/marl.py` | NumPy | MAPPO trainer (shared actor, centralised critic, GAE, PPO clip), learning-curve plots, gradient check; `--mode residual` trains the rule-adjusting agents |
 
-**Calibration.** `β = 0.15` and `n = 4` are US Bureau of Public Roads defaults. Fitting them against this network gave `n = 1.80`, `β = 0.384`, with R² 0.9974 against 0.9082 for the defaults: the network congests more gradually, but from a lower threshold than the standard assumes. Re-run `make calibrate` after any network change and report the fitted values, not the defaults.
+**Calibration.** `β = 0.15` and `n = 4` are US Bureau of Public Roads defaults. Fitting them against the OSM-built network (`data/out/calibration.json`, six demand levels from 100 to 1,500 vehicles) gave `β = 0.304` and `n = 1.0`, with R² 0.962 against 0.633 when `n` is fixed at 4. `n = 1.0` is the lower bound the fit allows, so the true exponent may be lower still: on this network travel time grows roughly linearly with load over the range we can observe. These are the values every Hive result above uses. (An earlier fit on a rebuilt copy of the network gave `n = 1.80`, `β = 0.384`; that copy is no longer used.) Re-run `make calibrate` after any network change and report the fitted values, not the defaults.
 
 **Why no Unity?** 3D rendering was considered and dropped. The Skia canvas covers the visualisation on both web and mobile from one codebase, and a separate engine would have added a build dependency without changing any result.
 
@@ -369,11 +373,11 @@ Absent vehicles are encoded `x = y = -32768`. `flags` bit 0 marks a stopped vehi
 - [x] Roadside obstacles and the Hive Out driver view
 - [x] Multi-agent RL (MAPPO) corridor policy, evaluated on total vehicle-hours
 - [x] Residual MARL (agents adjust the Hive rule's prices), trained 150 iterations
-- [ ] Evaluate `hive_marl_corridor` against `hive_corridor` on the held-out seeds
-- [ ] Retrain and re-evaluate MARL on the OSM-built network, 10 seeds
-- [ ] React Native playback app (Skia canvas, transport controls)
-- [ ] Results panel wired to `metrics.json`
-- [ ] Demand sweep for the HPDM crossover plot
+- [x] Evaluate `hive_marl_corridor` against `hive_corridor` on the held-out seeds
+- [x] Retrain and re-evaluate MARL on the OSM-built network, 10 seeds
+- [ ] MARL chapters (methodology and results) finalised in the manuscript
+- [ ] 30-seed paired test of Hive + MARL against the rule (is the 1 % gain with obstacles real?)
+- [ ] MARL results shown in the app's results panel
 
 ### 🤝 The swarm behind it
 
