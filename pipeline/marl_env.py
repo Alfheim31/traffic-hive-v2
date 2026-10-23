@@ -31,6 +31,19 @@ Reward r_i: cooperative and tied to the system-optimum objective. With
     cost by trapping traffic. The second term
     is the thesis' fairness tolerance, applied to expected travel time.
 
+Residual mode (EnvConfig.mode = "residual")
+------------------------------------------
+Instead of choosing the split from scratch, each agent adjusts the Traffic
+Hive rule. Vehicles are still assigned one by one by the rule
+(CorridorController with the hive_corridor settings: marginal-cost softmax,
+eta = 0.03, epsilon = 0.25 on travel time), and the agent's action adds a
+price offset to one corridor of its OD pair for the next epoch:
+    a_i in {no change} U {+d or -d seconds on corridor k : d in TILTS_S}
+(13 actions for K = 3). With every offset zero the behaviour is exactly
+the rule, so the rule is the starting point rather than a random policy.
+The fairness tolerance stays a hard constraint inside the rule, so the
+soft fairness penalty in the reward is switched off in this mode.
+
 State s (for the centralised critic only): delay ratio and occupancy of
     every corridor of every agent plus the network summary. Agents act on
     o_i alone (centralised training, decentralised execution).
@@ -58,6 +71,7 @@ EDGE_TIME_CAP = 300.0
 SMOOTHING = 0.4
 SCALE = 200.0          # vehicle-seconds per reward unit (20 vehicles for one epoch)
 STRANDED_S = 600.0     # charged per vehicle still in the network at cut-off (about one full trip)
+TILTS_S = (30.0, 90.0)  # residual mode: price offsets (s) an agent can add to or take off one corridor
 
 
 def split_table(k: int, step: float = 0.25) -> np.ndarray:
@@ -66,6 +80,31 @@ def split_table(k: int, step: float = 0.25) -> np.ndarray:
     rows = [c for c in itertools.product(range(n + 1), repeat=k) if sum(c) == n]
     rows.sort(key=lambda c: (-c[0], -c[1] if k > 1 else 0))
     return np.array(rows, dtype=np.float64) / n
+
+
+def residual_table(k: int, tilts: tuple[float, ...] = TILTS_S) -> np.ndarray:
+    """Residual actions: no change, or +/- d seconds on one corridor."""
+    rows = [np.zeros(k)]
+    for j in range(k):
+        for d in tilts:
+            for sign in (1.0, -1.0):
+                r = np.zeros(k); r[j] = sign * d; rows.append(r)
+    return np.array(rows)
+
+
+def make_residual_rule(corridors_path: Path, seed: int):
+    """The Traffic Hive rule with per-corridor price offsets the agents set."""
+    from pipeline.run_scenarios import SCENARIOS, CorridorController
+
+    class ResidualHive(CorridorController):
+        def __init__(self) -> None:
+            super().__init__(SCENARIOS["hive_corridor"], seed, Path(corridors_path))
+            self.tilt = [[0.0] * len(r) for r in self.routes]
+
+        def _costs(self, gi: int) -> list[float]:
+            return [c + self.tilt[gi][i] for i, c in enumerate(super()._costs(gi))]
+
+    return ResidualHive()
 
 
 @dataclass
@@ -82,6 +121,7 @@ class EnvConfig:
     fairness_weight: float = 0.5
     stranded_s: float = STRANDED_S
     step_length: float = STEP_S
+    mode: str = "split"               # "split": policy picks the split; "residual": policy adjusts the Hive rule
     workdir: Path | None = None
     outputs: dict = field(default_factory=dict)   # fcd / tripinfo / summary paths, evaluation only
 
@@ -91,8 +131,10 @@ class CorridorCore:
 
     def __init__(self, corridors_path: Path, horizon: float, alpha: float = 0.5,
                  epsilon: float = 0.25, fairness_weight: float = 0.5, seed: int = 0,
-                 stranded_s: float = STRANDED_S) -> None:
+                 stranded_s: float = STRANDED_S, mode: str = "split") -> None:
         self.stranded_s = stranded_s
+        self.mode = mode
+        self.corridors_path, self.seed = Path(corridors_path), seed
         data = json.loads(Path(corridors_path).read_text())
         self.groups = data.get("groups") or [data]
         self.n = len(self.groups)
@@ -103,9 +145,12 @@ class CorridorCore:
             for j, c in enumerate(g["corridors"]):
                 self.t0[i, j] = float(c["t0"]); self.cap[i, j] = max(1.0, float(c["capacity"])); self.valid[i, j] = True
         self.key_to_group = {(g["origin"], g["destination"]): i for i, g in enumerate(self.groups)}
-        self.actions = split_table(self.k)
+        self.route_index = [{r: j for j, r in enumerate(g)} for g in self.routes]
+        self.actions = residual_table(self.k) if mode == "residual" else split_table(self.k)
         self.horizon = float(horizon)
-        self.alpha, self.epsilon, self.fairness_weight = alpha, epsilon, fairness_weight
+        self.alpha, self.epsilon = alpha, epsilon
+        # in residual mode epsilon is enforced inside the rule, so no soft penalty
+        self.fairness_weight = 0.0 if mode == "residual" else fairness_weight
         self.rng = random.Random(seed + 7919)
         self.reset_state()
 
@@ -133,6 +178,7 @@ class CorridorCore:
         self.epoch_departures = np.zeros(self.n)
         self.vehsec = np.zeros(self.n)
         self.assigned = np.zeros((self.n, self.k))
+        self.rule = make_residual_rule(self.corridors_path, self.seed) if self.mode == "residual" else None
 
     def load_schedule(self, routes_file: Path) -> None:
         """Scheduled departure times per agent, to charge vehicles waiting to enter."""
@@ -145,6 +191,9 @@ class CorridorCore:
 
     # -- per simulation step ------------------------------------------------
     def on_step(self, traci, now: float, dt: float) -> None:
+        if self.rule is not None:
+            self._on_step_residual(traci, now, dt)
+            return
         for vid in traci.simulation.getDepartedIDList():
             try:
                 route = traci.vehicle.getRoute(vid)
@@ -164,6 +213,27 @@ class CorridorCore:
             self.veh_group[vid] = gi
             self.active[gi] += 1; self.departed_count[gi] += 1; self.epoch_departures[gi] += 1
             self.assigned[gi, k] += 1
+        self._account(traci, now, dt)
+
+    def _on_step_residual(self, traci, now: float, dt: float) -> None:
+        """The Hive rule assigns the departures (exactly as hive_corridor); we only keep the books."""
+        self.rule.step(traci, int(now))
+        for vid in traci.simulation.getDepartedIDList():
+            try:
+                route = tuple(traci.vehicle.getRoute(vid))
+            except traci.TraCIException:
+                continue
+            gi = self.key_to_group.get((route[0], route[-1])) if route else None
+            if gi is None:
+                continue
+            k = self.route_index[gi].get(route)
+            if k is not None:
+                self.assigned[gi, k] += 1
+            self.veh_group[vid] = gi
+            self.active[gi] += 1; self.departed_count[gi] += 1; self.epoch_departures[gi] += 1
+        self._account(traci, now, dt)
+
+    def _account(self, traci, now: float, dt: float) -> None:
         for vid in traci.simulation.getArrivedIDList():
             gi = self.veh_group.pop(vid, None)
             if gi is not None:
@@ -200,7 +270,12 @@ class CorridorCore:
         return obs, state
 
     def apply(self, actions: np.ndarray) -> None:
-        self.split = self.actions[actions]
+        if self.rule is not None:
+            tilt = self.actions[actions]
+            for i in range(self.n):
+                self.rule.tilt[i] = [float(tilt[i, j]) for j in range(len(self.rule.tilt[i]))]
+        else:
+            self.split = self.actions[actions]
         self.epoch_departures[:] = 0
 
     def rewards(self) -> np.ndarray:
@@ -222,7 +297,8 @@ class CorridorMARLEnv:
 
     def __init__(self, cfg: EnvConfig) -> None:
         self.cfg = cfg
-        self.core = CorridorCore(cfg.corridors, cfg.horizon, cfg.alpha, cfg.epsilon, cfg.fairness_weight, cfg.seed, cfg.stranded_s)
+        self.core = CorridorCore(cfg.corridors, cfg.horizon, cfg.alpha, cfg.epsilon, cfg.fairness_weight, cfg.seed,
+                                 cfg.stranded_s, cfg.mode)
         self.workdir = Path(cfg.workdir or tempfile.mkdtemp(prefix="marl_"))
         self.workdir.mkdir(parents=True, exist_ok=True)
         self._conn = None

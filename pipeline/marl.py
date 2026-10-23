@@ -24,9 +24,12 @@ against finite differences.
     python -m pipeline.marl train --iterations 60 --resume # continues from the last checkpoint
     python -m pipeline.marl plot                           # learning curve figure
     python -m pipeline.marl --gradcheck
+    python -m pipeline.marl train --mode residual ...       # agents adjust the Hive rule (see marl_env)
 
 The trained actor is exported to models/marl_policy.npz, which the
-`marl_corridor` scenario loads to run in SUMO without any training code.
+`marl_corridor` scenario loads to run in SUMO without any training code. In
+residual mode it goes to models/marl_residual_policy.npz, run by the
+`hive_marl_corridor` scenario.
 """
 
 from __future__ import annotations
@@ -46,6 +49,14 @@ CHECKPOINT = Path("data/models/marl_checkpoint.npz")
 POLICY = Path("models/marl_policy.npz")
 LOG = Path("data/models/marl_training_log.jsonl")
 OBSTACLES = "examples/obstacles_espana_demo.json"
+
+
+def paths(mode: str) -> tuple[Path, Path, Path]:
+    """Checkpoint, exported policy and log for a mode ("split" or "residual")."""
+    if mode == "residual":
+        return (Path("data/models/marl_residual_checkpoint.npz"), Path("models/marl_residual_policy.npz"),
+                Path("data/models/marl_residual_training_log.jsonl"))
+    return CHECKPOINT, POLICY, LOG
 
 
 # --------------------------------------------------------------------------
@@ -193,6 +204,7 @@ class TrainConfig:
     epsilon: float = 0.25
     fairness_weight: float = 0.5
     seed: int = 7
+    mode: str = "split"           # "residual": agents adjust the Hive rule instead of replacing it
 
 
 def run_episode(args: tuple) -> dict:
@@ -336,18 +348,23 @@ def episode_settings(cfg: TrainConfig, rng: np.random.Generator) -> dict:
             "tail": cfg.tail, "seed": int(rng.integers(1, 10**6)),
             "obstacles": OBSTACLES if rng.random() < cfg.obstacle_prob else None,
             "alpha": cfg.alpha, "epsilon": cfg.epsilon, "fairness_weight": cfg.fairness_weight,
-            "stranded_s": cfg.stranded_s}
+            "stranded_s": cfg.stranded_s, "mode": cfg.mode}
 
 
 def train(cfg: TrainConfig, resume: bool) -> None:
     from pipeline.marl_env import CorridorCore
-    core = CorridorCore(Path("data/net/corridors.json"), cfg.horizon)
+    checkpoint, policy_path, log = paths(cfg.mode)
+    core = CorridorCore(Path("data/net/corridors.json"), cfg.horizon, mode=cfg.mode)
     algo = MAPPO(core.obs_dim, core.state_dim, core.n_actions, cfg)
-    if resume and CHECKPOINT.exists():
-        algo.load(CHECKPOINT)
+    if resume and checkpoint.exists():
+        algo.load(checkpoint)
         print(f"resumed at iteration {algo.iteration}")
+    elif cfg.mode == "residual":
+        # start close to the rule itself: "no change" (action 0) gets about
+        # 40 % of the probability, the twelve adjustments share the rest
+        algo.actor.params[-1][0] += 2.0
     rng = np.random.default_rng(cfg.seed + 1000 * algo.iteration)
-    LOG.parent.mkdir(parents=True, exist_ok=True)
+    log.parent.mkdir(parents=True, exist_ok=True)
     with ProcessPoolExecutor(cfg.workers) as pool:
         while algo.iteration < cfg.iterations:
             t0 = time.time()
@@ -361,13 +378,13 @@ def train(cfg: TrainConfig, resume: bool) -> None:
                    "stranded_per_100": round(float(np.mean([e["stranded"] / e["vehicles"] * 100 for e in eps])), 2),
                    "share": np.mean([e["share"] for e in eps], 0).round(3).tolist(),
                    "split_entropy": round(float(np.mean([e["entropy"] for e in eps])), 3), **stats}
-            with LOG.open("a") as fh:
+            with log.open("a") as fh:
                 fh.write(json.dumps(rec) + "\n")
             print(json.dumps(rec), flush=True)
-            algo.save(CHECKPOINT)
-            algo.policy(core.actions).save(POLICY, {"iteration": algo.iteration, "config": asdict(cfg),
-                                                    "obs_dim": core.obs_dim, "n_actions": core.n_actions,
-                                                    "agents": core.n})
+            algo.save(checkpoint)
+            algo.policy(core.actions).save(policy_path, {"iteration": algo.iteration, "config": asdict(cfg),
+                                                         "obs_dim": core.obs_dim, "n_actions": core.n_actions,
+                                                         "agents": core.n, "mode": cfg.mode})
 
 
 # --------------------------------------------------------------------------
@@ -415,7 +432,7 @@ def gradcheck() -> None:
     print(f"critic gradient check: worst relative error {w2:.2e}")
 
 
-def plot(out: Path = Path("figures/fig7_marl_learning_curve")) -> None:
+def plot(out: Path = Path("figures/fig7_marl_learning_curve"), mode: str = "split") -> None:
     """Learning curve: episode return per iteration with reference policies."""
     import matplotlib
     matplotlib.use("Agg")
@@ -423,8 +440,9 @@ def plot(out: Path = Path("figures/fig7_marl_learning_curve")) -> None:
     # Phase 1 (if kept) used 300 s tails and a 300 s stranded cost; phase 2
     # resumed from it with 600 s for both. Returns are on comparable scales
     # but not identical, so the switch is marked.
-    phase1 = LOG.with_name("marl_training_log_phase1.jsonl")
-    logs = [p for p in (phase1, LOG) if p.exists()]
+    log = paths(mode)[2]
+    phase1 = log.with_name("marl_training_log_phase1.jsonl")
+    logs = [p for p in (phase1, log) if p.exists()]
     recs = [json.loads(l) for p in logs for l in p.read_text().splitlines() if l.strip()]
     it = np.array([r["iteration"] for r in recs]); ret = np.array([r["return"] for r in recs])
     k = max(1, min(9, len(ret) // 5))
@@ -437,7 +455,7 @@ def plot(out: Path = Path("figures/fig7_marl_learning_curve")) -> None:
         split_at = sum(1 for l in phase1.read_text().splitlines() if l.strip())
         ax.axvline(split_at + 0.5, color="#475569", lw=1, ls=(0, (2, 2)))
     ref = Path("data/models/baselines.json")
-    if ref.exists():
+    if ref.exists() and mode == "split":
         # reference lines: fixed policies scored on four fixed held-out episodes
         styles = {"hive_rule": ("#B4623A", "-", "Traffic Hive rule"), "fastest_only": ("#5E6353", "--", "Everyone on fastest corridor"),
                   "even_split": ("#8C9080", ":", "Fixed even split")}
@@ -473,7 +491,11 @@ def main() -> None:
     if args.gradcheck:
         gradcheck(); return
     if args.command == "plot":
-        plot(); return
+        if args.mode == "residual":
+            plot(Path("figures/fig8_marl_residual_learning_curve"), mode="residual")
+        else:
+            plot()
+        return
     if args.command == "train":
         cfg = TrainConfig(**{f: getattr(args, f) for f in asdict(TrainConfig())})
         train(cfg, args.resume)

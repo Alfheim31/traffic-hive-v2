@@ -114,7 +114,8 @@ def _trips(run_dir: Path) -> dict[str, float]:
             for e in ET.parse(run_dir / "tripinfo.xml").getroot().iter("tripinfo")}
 
 
-LABEL = {"ue_corridor": "UE (selfish)", "hive_corridor": "Traffic Hive", "marl_corridor": "Hive (MARL)"}
+LABEL = {"ue_corridor": "UE (selfish)", "hive_corridor": "Traffic Hive", "marl_corridor": "Hive (MARL)",
+         "hive_marl_corridor": "Hive + MARL"}
 
 
 def main() -> None:
@@ -171,9 +172,11 @@ def main() -> None:
         print(f"  time-loss reduction per seed (%, completed trips only): {[round(x, 1) for x in red]}")
         print(f"  win rate (lower total vehicle-hours): {wins}/{len(rows)}")
         print(f"  vehicles faster (paired): {[x['paired_faster'][r] for x in rows]}")
-    if "hive_corridor" in rules and "marl_corridor" in rules:
-        red = [(x["rules"]["hive_corridor"]["vehicle_hours"] - x["rules"]["marl_corridor"]["vehicle_hours"]) / x["rules"]["hive_corridor"]["vehicle_hours"] * 100 for x in rows]
-        print(f"\nMARL vs Traffic Hive rule: total vehicle-hours change per seed (%, positive = MARL better): {[round(x, 1) for x in red]}")
+    for learned in ("marl_corridor", "hive_marl_corridor"):
+        if "hive_corridor" in rules and learned in rules:
+            red = [(x["rules"]["hive_corridor"]["vehicle_hours"] - x["rules"][learned]["vehicle_hours"]) / x["rules"]["hive_corridor"]["vehicle_hours"] * 100 for x in rows]
+            print(f"\n{LABEL[learned]} vs Traffic Hive rule: total vehicle-hours change per seed "
+                  f"(%, positive = learned better): {[round(x, 1) for x in red]}")
 
     out = ROOT / f"eval_{tag}{'_' + '-'.join(rules) if rules != list(PAIR) else ''}.json"
     out.write_text(json.dumps({"args": vars(args), "rows": rows, "win_rate": win_rate}, indent=1))
