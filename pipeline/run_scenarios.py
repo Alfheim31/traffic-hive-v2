@@ -96,6 +96,17 @@ SCENARIOS: dict[str, Scenario] = {
             "Traffic Hive (MARL)",
             reroute_period=10,
         ),
+        # Residual MARL: the Traffic Hive rule assigns every vehicle, and the
+        # trained agents adjust its corridor prices each epoch. With no
+        # adjustment it is exactly hive_corridor. Needs
+        # models/marl_residual_policy.npz (python -m pipeline.marl train --mode residual).
+        Scenario(
+            "hive_marl_corridor",
+            "actuated",
+            "corridor_hive_marl",
+            "Traffic Hive + MARL",
+            reroute_period=10,
+        ),
         Scenario(
             "ue_corridor",
             "actuated",
@@ -536,17 +547,22 @@ class MarlController:
     """
 
     POLICY = Path("models/marl_policy.npz")
+    RESIDUAL_POLICY = Path("models/marl_residual_policy.npz")
 
-    def __init__(self, seed: int, corridors_path: Path, horizon: int, routes: Path) -> None:
+    def __init__(self, seed: int, corridors_path: Path, horizon: int, routes: Path, residual: bool = False) -> None:
         import numpy as np
         from pipeline.marl import Policy
         from pipeline.marl_env import CorridorCore, EPOCH_S
-        if not self.POLICY.exists():
-            sys.exit("marl_corridor needs a trained policy at models/marl_policy.npz. "
-                     "Train one with: python -m pipeline.marl train")
+        path = self.RESIDUAL_POLICY if residual else self.POLICY
+        if not path.exists():
+            sys.exit(f"this scenario needs a trained policy at {path}. Train one with: "
+                     f"python -m pipeline.marl train{' --mode residual' if residual else ''}")
         self.np = np
-        self.policy = Policy.load(self.POLICY)
-        self.core = CorridorCore(corridors_path, horizon, seed=seed)
+        self.policy = Policy.load(path)
+        mode = self.policy.meta.get("mode", "split")
+        if mode != ("residual" if residual else "split"):
+            sys.exit(f"{path} was trained in {mode} mode, which does not match this scenario.")
+        self.core = CorridorCore(corridors_path, horizon, seed=seed, mode=mode)
         self.core.load_schedule(routes)
         if self.core.obs_dim != self.policy.p[0].shape[0]:
             sys.exit("models/marl_policy.npz was trained on a different corridors.json; retrain it.")
@@ -863,6 +879,8 @@ def run(
             controller = None
         elif scenario.routing == "corridor_marl":
             controller = MarlController(seed, corridors_path, horizon, routes)
+        elif scenario.routing == "corridor_hive_marl":
+            controller = MarlController(seed, corridors_path, horizon, routes, residual=True)
         elif scenario.routing.startswith("corridor"):
             controller = CorridorController(scenario, seed, corridors_path)
         else:
