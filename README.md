@@ -126,6 +126,19 @@ python -m pipeline.evaluate --vehicles 1000 --rules ue_corridor hive_corridor ma
 
 The trained policy ships as `models/marl_policy.npz` (62 KB, NumPy only, no PyTorch needed) and runs as the `marl_corridor` scenario.
 
+**Residual mode: let the agents nudge the rule instead of replacing it.** The split policy above has to rediscover from scratch what the HPDM formula already knows. Residual mode keeps the formula in charge: the Hive rule still assigns every vehicle (marginal-cost softmax, η = 0.03, ε = 0.25 as a hard constraint), and each agent's action only adds a price offset to one of its corridors for the next epoch, either nothing or ±30 s / ±90 s on one corridor (13 actions for three corridors). With every offset at zero it *is* `hive_corridor`, and training starts with about 40 % of the probability on "no change", so the rule is the starting point rather than a random policy. Because ε is enforced inside the rule, the soft fairness penalty is switched off in this mode.
+
+```bash
+python -m pipeline.marl train --mode residual --iterations 150 \
+    --vehicles-min 900 --vehicles-max 1100 --horizon 900 --tail 900 \
+    --entropy-start 0.01 --entropy-end 0.001
+python -m pipeline.marl plot --mode residual   # figures/fig8_marl_residual_learning_curve.png
+python -m pipeline.evaluate --vehicles 1000 --rules ue_corridor hive_corridor hive_marl_corridor \
+    --obstacles examples/obstacles_espana_demo.json
+```
+
+The residual policy ships as `models/marl_residual_policy.npz` and runs as the `hive_marl_corridor` scenario. It has been trained for 150 iterations but **not yet evaluated** against the rule, so there is no results row for it above. See "The honest part" for what the learning curve does and doesn't show.
+
 </details>
 
 <details>
@@ -139,6 +152,7 @@ A thesis is only as good as the results it doesn't hide, so here are ours:
 - **Our Synchronized System Optimum didn't work.** We tried adding a penalty on arrival-time variance (λ). No value of λ both binds and still distributes demand: it either does nothing or collapses everyone onto one corridor. We report it as a negative result (figure 3 below).
 - **Per-trip averages flatter Hive.** They only count finished trips, and Hive leaves more vehicles unfinished. On **total vehicle-hours** with 30 minutes of clearance (the `pipeline.evaluate` default now), the Hive rule ties UE without obstacles (144.5 vs 145.5) and is about 2 % worse with them. Quote per-trip gains together with completion, and use vehicle-hours for network-wide claims. That gap is what the MARL policy closes with obstacles.
 - **The rebuilt network is an approximation.** These numbers use a SUMO network rebuilt from `net.json`, whose junction connections netconvert guesses again. Re-run on the OSM-built `corridor.net.xml` (and retrain MARL on it) before the manuscript quotes them.
+- **Residual MARL hasn't shown it learns anything yet.** Over 150 iterations its mean training return moved sideways (about −158 over the first ten iterations, about −157 over the last ten), and the policy is still close to random among its 13 actions (entropy 1.86 against a maximum of 2.56). Those returns come from 900–1,100-vehicle episodes, so they aren't comparable with the split policy's. Until `pipeline.evaluate` puts `hive_marl_corridor` next to `hive_corridor` on the same seeds, we make no claim that the agents improve the rule.
 - **The stress run is one seed**, and the two rules finished different shares of trips (36 % vs 48 %), so treat its per-trip averages as indicative. The five-seed table above is the result we stand behind. Hive reduced time loss in 9 of those 10 seeded runs.
 
 </details>
@@ -161,7 +175,8 @@ A thesis is only as good as the results it doesn't hide, so here are ours:
 <td><img src="figures/fig6_queue_timeseries.png" alt="Queue formation over the run" /><br/><sub><b>Fig 6.</b> Queue formation over the run, all four rules.</sub></td>
 </tr>
 <tr>
-<td colspan="2"><img src="figures/fig7_marl_learning_curve.png" alt="MARL learning curve" /><br/><sub><b>Fig 7.</b> MAPPO learning curve. Returns rise from random-split level to the heuristic rule's in about 65 iterations; phase 2 lengthens the episode tail.</sub></td>
+<td><img src="figures/fig7_marl_learning_curve.png" alt="MARL learning curve" /><br/><sub><b>Fig 7.</b> MAPPO learning curve (split mode). Returns rise from random-split level to the heuristic rule's in about 65 iterations; phase 2 lengthens the episode tail.</sub></td>
+<td><img src="figures/fig8_marl_residual_learning_curve.png" alt="Residual MARL learning curve" /><br/><sub><b>Fig 8.</b> Residual-mode learning curve. Flat over 150 iterations: no evidence yet that the price offsets improve on the rule.</sub></td>
 </tr>
 </table>
 
@@ -274,7 +289,7 @@ New to the setup? [`SETUP.md`](SETUP.md) walks through it with GitHub Desktop + 
 | `ue` | gap-based | greedy rerouting | what navigation apps do |
 | `hive` | gap-based | HPDM softmax | the proposed rule |
 
-All four share one network, one demand file and one seed. Only the rule changes, and that isolation is what makes the comparison defensible. The corridor versions (`ue_corridor`, `hive_corridor`) assign over corridors precomputed by `pipeline/corridors.py`, which is both the formulation the manuscript describes and the reason thousands of vehicles stay tractable. There's also a `hive_sue` ablation: HPDM over plain travel time, kept to show that it degenerates into Stochastic User Equilibrium. `marl_corridor` swaps the HPDM formula for the learned MAPPO policy over the same corridors.
+All four share one network, one demand file and one seed. Only the rule changes, and that isolation is what makes the comparison defensible. The corridor versions (`ue_corridor`, `hive_corridor`) assign over corridors precomputed by `pipeline/corridors.py`, which is both the formulation the manuscript describes and the reason thousands of vehicles stay tractable. There's also a `hive_sue` ablation: HPDM over plain travel time, kept to show that it degenerates into Stochastic User Equilibrium. `marl_corridor` swaps the HPDM formula for the learned MAPPO policy over the same corridors, and `hive_marl_corridor` keeps the formula but lets the trained agents shift its corridor prices each epoch.
 
 </details>
 
@@ -330,8 +345,8 @@ Absent vehicles are encoded `x = y = -32768`. `flags` bit 0 marks a stopped vehi
 | `pipeline/calibrate.py` | SciPy | Fits BPR volume-delay parameters to SUMO observations by nonlinear least squares |
 | `pipeline/evaluate.py` | NumPy | Replicated N-way runs (`--rules`): vehicle-hours, completion, delay, Gini, entropy, paired win rate |
 | `pipeline/figures.py` | Matplotlib | Regenerates every manuscript figure from data files |
-| `pipeline/marl_env.py` | TraCI | Multi-agent corridor environment: observations, cooperative reward, stranded-vehicle cost |
-| `pipeline/marl.py` | NumPy | MAPPO trainer (shared actor, centralised critic, GAE, PPO clip), learning-curve plot, gradient check |
+| `pipeline/marl_env.py` | TraCI | Multi-agent corridor environment: observations, cooperative reward, stranded-vehicle cost; `split` and `residual` action modes |
+| `pipeline/marl.py` | NumPy | MAPPO trainer (shared actor, centralised critic, GAE, PPO clip), learning-curve plots, gradient check; `--mode residual` trains the rule-adjusting agents |
 
 **Calibration.** `β = 0.15` and `n = 4` are US Bureau of Public Roads defaults. Fitting them against this network gave `n = 1.80`, `β = 0.384`, with R² 0.9974 against 0.9082 for the defaults: the network congests more gradually, but from a lower threshold than the standard assumes. Re-run `make calibrate` after any network change and report the fitted values, not the defaults.
 
@@ -353,6 +368,8 @@ Absent vehicles are encoded `x = y = -32768`. `flags` bit 0 marks a stopped vehi
 - [x] Corridor routing on measured costs, replicated evaluation
 - [x] Roadside obstacles and the Hive Out driver view
 - [x] Multi-agent RL (MAPPO) corridor policy, evaluated on total vehicle-hours
+- [x] Residual MARL (agents adjust the Hive rule's prices), trained 150 iterations
+- [ ] Evaluate `hive_marl_corridor` against `hive_corridor` on the held-out seeds
 - [ ] Retrain and re-evaluate MARL on the OSM-built network, 10 seeds
 - [ ] React Native playback app (Skia canvas, transport controls)
 - [ ] Results panel wired to `metrics.json`
