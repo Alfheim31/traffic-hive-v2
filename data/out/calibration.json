@@ -1,0 +1,63 @@
+{
+  "scenario": "actuated",
+  "horizon": 600,
+  "seed": 42,
+  "observations": [
+    {
+      "demand": 100,
+      "completed": 100,
+      "mean_travel_time_s": 233.99,
+      "mean_route_length_m": 2312.73
+    },
+    {
+      "demand": 200,
+      "completed": 200,
+      "mean_travel_time_s": 245.6525,
+      "mean_route_length_m": 2378.33
+    },
+    {
+      "demand": 400,
+      "completed": 400,
+      "mean_travel_time_s": 270.1125,
+      "mean_route_length_m": 2394.55
+    },
+    {
+      "demand": 700,
+      "completed": 686,
+      "mean_travel_time_s": 290.8112,
+      "mean_route_length_m": 2324.73
+    },
+    {
+      "demand": 1000,
+      "completed": 968,
+      "mean_travel_time_s": 301.0346,
+      "mean_route_length_m": 2327.61
+    },
+    {
+      "demand": 1500,
+      "completed": 1376,
+      "mean_travel_time_s": 330.1552,
+      "mean_route_length_m": 2340.86
+    }
+  ],
+  "fit_free_exponent": {
+    "t0": 235.5522,
+    "capacity": 1082.0906,
+    "beta": 0.304422,
+    "n": 1.0,
+    "r_squared": 0.962186,
+    "rmse": 6.3797,
+    "n_points": 6
+  },
+  "fit_fixed_exponent_4": {
+    "t0": 263.5506,
+    "capacity": 1290.0189,
+    "beta": 0.150156,
+    "n": 4.0,
+    "r_squared": 0.632671,
+    "rmse": 19.8839,
+    "n_points": 6
+  },
+  "bpr_default_rmse": 764.6985,
+  "improvement_over_default_pct": 99.17
+}

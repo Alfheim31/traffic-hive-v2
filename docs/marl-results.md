@@ -1,67 +1,95 @@
 # Learning-based corridor assignment: results
 
-*Draft for Chapter 4. All numbers come from `python -m pipeline.evaluate` on the rebuilt España network (see the caveat at the end). Re-run on the OSM-built `corridor.net.xml` before quoting them in the manuscript.*
-
-## Training
-
-The shared policy was trained for 188 MAPPO iterations (752 SUMO episodes). Figure 7 (`figures/fig7_marl_learning_curve.png`) shows the mean episode return per iteration.
-
-In phase 1 the return rose from −80.8, which is the untrained policy choosing splits almost at random, to the level of the heuristic Traffic Hive rule (−55.0 on four fixed held-out episodes) by about iteration 65, and stayed there. Over the same period the policy's entropy fell from 2.71 (uniform over 15 splits) to about 1.1, and the corridor split moved from 33 / 33 / 33 % to about 56 / 28 / 16 %, which is close to the 65 / 26 / 9 % the heuristic rule produces. The agents therefore learned, from reward alone, to favour each OD pair's fastest corridor while keeping a meaningful share on the alternatives.
-
-On the four held-out phase-1 episodes the greedy policy scored −55.6, against −55.0 for the heuristic rule and −56.5 for sending every vehicle down its fastest corridor.
-
-Phase 1 cut episodes off 300 s after the demand window, while trips take about eight minutes, so about 40 % of vehicles were still travelling at the cut-off and their remaining cost was under-counted. Phase 2 resumed with a 600 s tail and a 600 s stranded cost, which reduced vehicles still travelling at the cut-off to about 6 %. Returns in phase 2 levelled off after about 10 iterations and training was stopped at iteration 188.
+*Draft for Chapter 4. All numbers come from `python -m pipeline.evaluate` on the OSM-built España network (`data/net/corridor.net.xml`), with the Hive rule using the calibration in `data/out/calibration.json` (β = 0.304, n = 1.0).*
 
 ## Evaluation protocol
 
-Each rule was run on identical demand for five held-out seeds (11, 22, 33, 44, 55), 1,000 vehicles over a 900 s demand window, with 1,800 s of clearance after the window so that nearly every trip completes. The primary measure is **total vehicle-hours**: the time of all vehicles in the network or waiting to enter it, summed over the run, whether or not they finished. It is free of survivorship bias, and it is the quantity a system-optimal assignment minimises. Per-trip time loss and waiting are reported as secondary measures because they are averaged over completed trips only.
+Each method was run on identical demand for ten held-out seeds (11, 22, …, 110): 1,000 vehicles over a 900 s demand window, followed by 1,800 s of clearance so that nearly every trip completes. Each condition was run without obstacles and with the twelve España obstacles (`examples/obstacles_espana_demo.json`).
 
-An earlier evaluation with only 600 s of clearance showed the learned policy with the lowest per-trip time loss, but it also left almost twice as many vehicles unfinished. On total vehicle-hours it was no better than selfish routing. That result is not reported as an improvement; it is the reason the protocol above uses long clearance and total vehicle-hours.
+The primary measure is **total vehicle-hours**: the time of every vehicle in the network or waiting to enter it, summed over the run, whether or not it finished. It is free of survivorship bias, and it is the quantity a system-optimal assignment minimises. Per-trip time loss and waiting are secondary measures, because they are averaged over completed trips only.
+
+Methods compared:
+
+| Label | Scenario | What assigns the corridors |
+|---|---|---|
+| UE | `ue_corridor` | Every vehicle takes the currently fastest corridor (selfish routing) |
+| Hive rule | `hive_corridor` | HPDM: softmax over marginal cost, η = 0.03, ε = 0.25 |
+| Learned split, 200 it. | `marl_corridor` | MAPPO policy choosing the split, trained 200 iterations on 5-minute episodes |
+| Learned split, 260 it. | `marl_corridor` | The same policy fine-tuned for 60 more iterations on 15-minute episodes |
+| Hive + MARL | `hive_marl_corridor` | The Hive rule, with MAPPO agents adding price offsets each epoch (residual mode), trained 150 iterations on 15-minute episodes |
+
+## Training
+
+**Learned split.** Trained for 200 MAPPO iterations (800 SUMO episodes) on 5-minute demand windows of 280–420 vehicles, half of them with obstacles. The mean episode return rose from −78 to about −46 by iteration 75 and then levelled off (Figure 7). The corridor split moved from 33 / 33 / 33 % to about 65 / 25 / 10 %.
+
+**Episode-length sensitivity.** Under the conditions it was trained on (350 vehicles over 300 s, four seeds), the 200-iteration policy matched the Hive rule: 34.2 against 34.6 vehicle-hours, lower in 3 of 4 seeds, with a split of 71 / 21 / 8 %. Under the evaluation conditions (1,000 vehicles over 900 s) it changed behaviour, sending about 41 / 43 / 16 % of vehicles down the three corridors, and lost to both baselines in every seed. Inputs that depend on the scale of the run (time as a fraction of the demand window, vehicles in the network) reach values never seen in training. Fine-tuning for 60 iterations on 15-minute episodes (900–1,100 vehicles) improved the training return from about −192 to −170 but kept the split near 42 / 40 / 18 %.
+
+**Hive + MARL.** Trained for 150 iterations directly on 15-minute episodes. The return moved sideways (about −158 over the first ten iterations and −157 over the last ten; Figure 8), and the policy's entropy fell only from 2.2 to 1.9, against 2.56 for a uniform choice among the 13 actions. The agents did not find an adjustment that the reward consistently favoured.
 
 ## Results
 
-**Table A. No obstacles** (mean ± standard deviation over five seeds)
+**Table A. No obstacles** (mean ± standard deviation over ten seeds)
 
-| Measure | UE (selfish) | Traffic Hive rule | Traffic Hive MARL |
-|---|---|---|---|
-| Total vehicle-hours | 145.5 ± 7.0 | **144.5 ± 4.5** | 149.5 ± 10.4 |
-| Vehicles unfinished at end | **16.0** | 26.0 | 23.6 |
-| Trips completed | **98.4 %** | 97.4 % | 97.6 % |
-| Time loss per completed trip (s) | 255.7 | **224.5** | 232.1 |
-| Waiting per completed trip (s) | 124.2 | **105.1** | 115.7 |
-| Peak queue (vehicles) | 236.4 | 202.0 | **199.4** |
-| Load on busiest 10 % of road segments | 69.2 % | 64.3 % | **61.0 %** |
-| Road-load Gini | 0.793 | 0.753 | **0.731** |
-| Corridor split entropy | 0.74 | 0.90 | **0.96** |
-
-Per seed, total vehicle-hours: UE 136.5 / 141.2 / 147.3 / 147.8 / 154.9; rule 144.2 / 137.7 / 143.5 / 148.8 / 148.5; MARL 156.6 / 147.2 / 162.8 / 136.4 / 144.7. MARL had lower vehicle-hours than the rule in 2 of 5 seeds and than UE in 2 of 5.
+| Measure | UE | Hive rule | Learned split, 200 it. | Learned split, 260 it. | Hive + MARL |
+|---|---|---|---|---|---|
+| Total vehicle-hours | 114.4 ± 3.3 | **112.9 ± 2.8** | 124.8 ± 2.0 | 119.1 ± 3.7 | 113.6 ± 3.4 |
+| Trips completed | 100 % | 100 % | 100 % | 100 % | 100 % |
+| Time loss per trip (s) | 173.9 | **160.7** | 188.8 | 171.1 | 163.5 |
+| Waiting per trip (s) | 76.4 | **69.3** | — | 78.1 | 70.9 |
+| Peak queue (vehicles) | 187.7 | 169.8 | — | **151.6** | 172.8 |
+| Load on busiest 10 % of segments | 57.2 % | 53.3 % | — | **52.4 %** | 53.5 % |
+| Road-load Gini | 0.717 | 0.684 | — | **0.666** | 0.684 |
+| Corridor split entropy | 0.76 | 0.86 | — | **0.92** | 0.86 |
 
 **Table B. With the twelve España obstacles**
 
-| Measure | UE (selfish) | Traffic Hive rule | Traffic Hive MARL |
-|---|---|---|---|
-| Total vehicle-hours | 181.1 ± 5.6 | 185.2 ± 4.3 | **175.7 ± 5.3** |
-| Vehicles unfinished at end | 67.6 | 69.6 | **55.4** |
-| Trips completed | 93.2 % | 93.0 % | **94.5 %** |
-| Time loss per completed trip (s) | 274.3 | 260.4 | **247.1** |
-| Waiting per completed trip (s) | 142.5 | 135.8 | **126.9** |
-| Peak queue (vehicles) | 262.2 | 242.2 | **229.0** |
-| Load on busiest 10 % of road segments | 70.8 % | 69.1 % | **65.4 %** |
-| Road-load Gini | 0.801 | 0.785 | **0.760** |
-| Corridor split entropy | 0.84 | 0.93 | **0.98** |
+| Measure | UE | Hive rule | Learned split, 200 it. | Learned split, 260 it. | Hive + MARL |
+|---|---|---|---|---|---|
+| Total vehicle-hours | 163.6 ± 4.9 | 163.4 ± 3.6 | 196.1 ± 3.7 | 179.6 ± 2.5 | **161.6 ± 6.5** |
+| Vehicles unfinished at end | 63.7 | 57.4 | 85.5 | 71.8 | **53.6** |
+| Trips completed | 93.6 % | 94.3 % | 91.5 % | 92.8 % | **94.6 %** |
+| Time loss per completed trip (s) | 228.2 | **220.1** | 283.2 | 249.8 | 220.8 |
+| Waiting per completed trip (s) | 123.5 | 116.7 | — | 135.5 | **115.2** |
+| Peak queue (vehicles) | 250.0 | 242.4 | — | **213.8** | 243.9 |
+| Load on busiest 10 % of segments | 66.4 % | 63.0 % | — | 65.2 % | **62.9 %** |
+| Road-load Gini | 0.770 | **0.739** | — | 0.751 | **0.739** |
+| Corridor split entropy | 0.83 | 0.93 | — | **0.95** | 0.92 |
 
-Per seed, total vehicle-hours: UE 180.6 / 174.1 / 186.8 / 177.4 / 186.6; rule 188.1 / 185.6 / 182.4 / 179.5 / 190.2; MARL 177.9 / 181.2 / 178.1 / 167.4 / 173.9. MARL had lower vehicle-hours than the rule in **5 of 5 seeds** (by 2.4 %, 2.4 %, 5.4 %, 6.7 % and 8.6 %) and than UE in 4 of 5.
+Dashes: measure not recorded for that run.
+
+**Per seed, total vehicle-hours** (seeds 11, 22, …, 110)
+
+| | No obstacles | With obstacles |
+|---|---|---|
+| UE | 115.2, 117.4, 113.9, 109.0, 113.9, 114.8, 118.6, 116.6, 116.0, 108.4 | 175.5, 164.3, 162.0, 161.8, 165.5, 166.4, 160.6, 162.1, 157.8, 160.2 |
+| Hive rule | 115.4, 112.3, 114.3, 110.5, 115.6, 113.5, 110.1, 114.6, 115.7, 107.2 | 163.9, 168.9, 159.4, 166.2, 165.0, 165.4, 163.7, 163.3, 161.6, 156.1 |
+| Learned split, 200 it. | 125.3, 125.1, 122.5, 124.5, 127.0, 128.6, 125.2, 123.1, 122.0, 124.4 | 196.8, 196.1, 190.1, 199.9, 199.8, 198.4, 192.1, 200.4, 191.7, 195.9 |
+| Learned split, 260 it. | 122.8, 123.0, 116.7, 112.6, 123.0, 121.1, 118.6, 115.8, 121.0, 116.1 | 184.6, 180.5, 175.8, 178.8, 180.6, 181.3, 176.9, 178.9, 180.2, 178.0 |
+| Hive + MARL | 113.6, 115.1, 113.4, 114.7, 112.9, 114.9, 111.5, 120.2, 113.3, 106.4 | 167.0, 159.3, 157.7, 174.8, 167.6, 154.7, 156.3, 162.8, 160.2, 155.4 |
+
+**Paired comparisons on total vehicle-hours**
+
+| Comparison | No obstacles | With obstacles |
+|---|---|---|
+| Hive rule vs UE | lower in 6 of 10 seeds, −1.3 % | lower in 5 of 10, −0.2 % |
+| Learned split (200 it.) vs Hive rule | higher in 10 of 10, +10.5 % | higher in 10 of 10, +20.0 % |
+| Learned split (260 it.) vs Hive rule | higher in 10 of 10, +5.5 % | higher in 10 of 10, +9.9 % |
+| Hive + MARL vs Hive rule | lower in 5 of 10, +0.6 % (paired t = −0.8) | lower in 7 of 10, −1.1 % (paired t = 0.9) |
+
+With ten seeds, a paired t of about 2.3 or more in magnitude would be needed for significance at the 5 % level, so neither Hive + MARL difference is significant.
 
 ## Discussion
 
-With obstacles, the learned policy is the best of the three rules on every measure: about 5 % fewer total vehicle-hours than the heuristic rule and 3 % fewer than selfish routing, more trips completed, shorter queues and the most even use of the road network. Because it also leaves fewer vehicles unfinished, the improvement is not an artefact of stranded vehicles. Half of the training episodes contained obstacles, so the policy has learned to respond to disruptions that the heuristic rule's fixed formula prices only through measured travel time, after the queue has formed.
+**The Hive rule.** Against selfish routing, the rule cuts time loss per completed trip in all ten seeds without obstacles (−7.6 %) and in eight of ten with them (−3.5 %). It also lowers peak queues and spreads load more evenly. With obstacles it leaves 10 % fewer vehicles unfinished. On total vehicle-hours the difference is small: about 1 % lower without obstacles and level with them. Per-trip improvements should therefore be reported together with completion, and network-wide claims should rest on vehicle-hours.
 
-Without obstacles, the learned policy spreads traffic the most evenly but does not reduce total vehicle-hours: it is about 3.5 % worse than the heuristic rule on average and varies more between seeds. On undisrupted demand the heuristic rule already sits close to what corridor reassignment can achieve, which is consistent with the narrow price-of-anarchy window reported for this network.
+**Learning the split from scratch.** The MAPPO policy learned, from reward alone, a split close to the rule's under the conditions it was trained on, and matched the rule there. It did not transfer to longer runs. Because evaluation uses 15-minute demand windows, it lost to both baselines in every seed. Fine-tuning on 15-minute episodes halved the gap but did not close it within 60 iterations. The fine-tuned policy does reduce peak queues (about 11–12 % below the rule), but by holding vehicles back rather than moving them faster, which shows up as more waiting and more unfinished vehicles.
 
-The evaluation also changes how the heuristic rule should be reported. On per-trip time loss it improves on selfish routing by about 12 % without obstacles and 5 % with them, but on total vehicle-hours the two are within 1 % without obstacles, and the rule is 2 % worse with them. In both cases the rule leaves more vehicles unfinished, and those vehicles cancel the time saved by the rest. The manuscript should state per-trip improvements together with completion, and use total vehicle-hours for any claim about network-wide congestion.
+**Learning adjustments to the rule.** Keeping the rule in charge and letting the agents adjust its prices produced a method that is no worse than the rule on average, which was the purpose of the design, although single seeds still vary by up to about 5 % either way. It did not produce a significant improvement. With obstacles it was ahead in 7 of 10 seeds, with 1.1 % fewer vehicle-hours and 6.6 % fewer unfinished vehicles. That is consistent with a small gain, but it is within seed-to-seed variation. The flat learning curve suggests the agents mostly leave the rule unchanged.
+
+**Why the margins are small.** Every method we tested lies within about 2 % of the others on total vehicle-hours, while results vary by about 3 % from seed to seed. This matches the narrow price-of-anarchy window found for this network: when selfish routing is already close to the system optimum, neither a hand-designed rule nor a learned policy has much to recover. We therefore treat the Hive rule as the main result and report the MARL extensions as a tested alternative that did not outperform it.
 
 ## Caveats
 
-These runs use a SUMO network rebuilt from the exported `net.json`, whose junction connections are re-guessed by netconvert. Some vehicles that never finish may be stuck at reconstructed junctions rather than in genuine congestion, and the alternative corridors, which the Hive rules use more, pass through more of those junctions. The whole evaluation should be repeated on the OSM-built `corridor.net.xml`, and the policy retrained on it (`python -m pipeline.marl train`), before these figures are used in the manuscript.
-
-Five seeds are enough to see a consistent 5-of-5 pattern with obstacles, but not to establish small differences without them. For the paper, run 10 seeds (`--seeds 11 22 33 44 55 66 77 88 99 110`) and report the paired per-seed differences.
+- **Seeds.** Ten seeds can detect a difference of roughly 2–3 % in vehicle-hours. Testing whether the 1.1 % Hive + MARL gain with obstacles is real needs more, for example 30 seeds (`--seeds` with 30 values; about three hours on a laptop).
+- **Training conditions.** The learned split policy is sensitive to the length and size of training episodes. Training it from the start on 15-minute episodes, or making its inputs independent of run length, might change the result. We did not test that.
+- **Calibration.** The calibration fit sits at the exponent's lower bound (n = 1.0), so the marginal-cost term may be slightly misestimated. The first 46 Hive + MARL training iterations used the earlier fallback values (β = 0.384, n = 1.80) before training continued with the fitted ones. Evaluation used the fitted values throughout.

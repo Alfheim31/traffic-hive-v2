@@ -113,11 +113,16 @@ def load(path_or_list) -> list[Obstacle]:
     return [Obstacle.from_dict(d) for d in data]
 
 
-def resolve(obstacles: list[Obstacle], net_path: Path) -> list[Obstacle]:
-    """Snap each obstacle to the lane, position or junction it acts on."""
+def resolve(obstacles: list[Obstacle], net_path: Path | None = None, net=None) -> list[Obstacle]:
+    """Snap each obstacle to the lane, position or junction it acts on.
+
+    Pass an already loaded sumolib `net` to avoid re-reading the network
+    (the live mode places obstacles while the simulation runs).
+    """
     import sumolib
 
-    net = sumolib.net.readNet(str(net_path))
+    if net is None:
+        net = sumolib.net.readNet(str(net_path))
     xmin, ymin, xmax, ymax = net.getBoundary()
     cx, cy = (xmin + xmax) / 2.0, (ymin + ymax) / 2.0
 

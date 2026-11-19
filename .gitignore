@@ -3,7 +3,8 @@ __pycache__/
 .venv/
 data/raw/*.osm
 data/net/*.net.xml
-data/out/
+data/out/*
+!data/out/calibration.json
 app/node_modules/
 app/assets/sim/*.bin
 .DS_Store
@@ -12,3 +13,4 @@ data/eval/
 data/demo_runs/
 data/models/
 data/marl_smoke/
+data/live/

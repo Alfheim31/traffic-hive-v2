@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Traffic Hive Live</title>
+<style>
+/* Live digital-twin view. Dark tokens from app/src/theme.ts. The driver phone lives in the Hive Out replay (index.html). */
+:root {
+  --bg: #12140F; --panel: #191C16; --panel2: #1E221B; --border: #2A2E25; --text: #E8E6DC; --dim: #8C9080;
+  --accent: #1D9E75; --stopped: #D85A30; --signal: #E8B33C; --road: #3A3D34; --roadMajor: #4A4E42;
+  --c1: #2FB394; --c2: #5B9BE6; --c3: #B08CF0; --rer: #E8B33C;
+  --ob-vendor: #F59E0B; --ob-jeepney_stop: #60A5FA; --ob-enforcer: #A3E635; --ob-stalled: #F87171; --ob-roadwork: #FB923C;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 var(--font); display: flex; flex-direction: column; }
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--panel); }
+.brand { display: flex; align-items: baseline; gap: 10px; margin-right: auto; flex-wrap: wrap; }
+.brand h1 { font-size: 16px; margin: 0; font-weight: 650; }
+.brand span, .brand a { color: var(--dim); font-size: 13px; }
+.brand a:hover { color: var(--text); }
+.pill { font-family: var(--mono); font-size: 13px; padding: 4px 10px; border-radius: 999px; background: var(--panel2); border: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+.pill.live::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); margin-right: 7px; vertical-align: 1px; animation: blink 1.2s infinite; }
+@keyframes blink { 50% { opacity: .25; } }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.controls label, .lbl { color: var(--dim); font-size: 12.5px; display: flex; align-items: center; gap: 6px; }
+input, select { background: var(--panel2); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; }
+input[type=number] { width: 78px; }
+.btn { background: var(--panel2); border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; }
+.btn:hover { border-color: #3B4033; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #07140F; font-weight: 600; }
+.btn.warn { border-color: #5A4415; color: var(--signal); }
+.btn[disabled] { opacity: .45; cursor: default; }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.seg button { border: 0; background: var(--panel2); padding: 6px 11px; color: var(--dim); }
+.seg button.on { background: #2A3A30; color: var(--text); }
+
+.layout { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; padding: 12px 16px 0; min-height: 0; }
+main { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-height: 0; }
+.lane { display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; min-height: 0; }
+.lane h2 { margin: 0; font-size: 14px; font-weight: 600; padding: 10px 12px 0; display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.lane h2 small { color: var(--dim); font-weight: 400; }
+.kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: 8px 12px 10px; }
+.kpi { background: var(--panel2); border-radius: 6px; padding: 5px 8px; min-width: 0; }
+.kpi b { display: block; font-family: var(--mono); font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kpi span { color: var(--dim); font-size: 11.5px; white-space: nowrap; }
+.mapwrap { position: relative; flex: 1; min-height: 260px; }
+canvas.map { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
+.mapwrap .zoom { position: absolute; right: 8px; bottom: 8px; display: flex; flex-direction: column; gap: 4px; }
+.mapwrap .zoom button { width: 30px; height: 30px; border-radius: 6px; border: 1px solid var(--border); background: var(--panel2); font-size: 16px; line-height: 1; }
+
+
+footer { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.1fr); gap: 12px; padding: 12px 16px 14px; }
+.box { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; min-width: 0; }
+.box h3 { margin: 0 0 6px; font-size: 12.5px; color: var(--dim); font-weight: 500; }
+#delta { font-size: 20px; font-weight: 650; font-variant-numeric: tabular-nums; }
+#delta.good { color: var(--c1); } #delta.bad { color: var(--stopped); }
+#deltaSub { color: var(--dim); font-size: 12.5px; margin-top: 2px; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 8px; font-size: 12px; color: var(--dim); }
+.legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
+#chart { width: 100%; height: 96px; display: block; }
+.form { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 8px; }
+.form label { display: flex; flex-direction: column; gap: 3px; color: var(--dim); font-size: 12px; }
+.form .full { grid-column: 1 / -1; }
+.types { display: flex; flex-wrap: wrap; gap: 5px; }
+.types button { border: 1px solid var(--border); background: var(--panel2); border-radius: 999px; padding: 3px 9px; font-size: 12.5px; }
+.types button.on { border-color: currentColor; }
+.oblist { list-style: none; margin: 8px 0 0; padding: 0; max-height: 120px; overflow: auto; font-size: 12.5px; }
+.oblist li { display: flex; align-items: center; gap: 8px; padding: 3px 0; border-top: 1px solid var(--border); }
+.oblist li i { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; }
+.oblist li span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.oblist li button { border: 0; background: none; color: var(--dim); padding: 0 4px; }
+.oblist li button:hover { color: var(--stopped); }
+.hint { color: var(--dim); font-size: 12px; margin-top: 6px; }
+.driver { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); font-size: 12.5px; color: var(--dim); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.driver b { color: var(--text); font-weight: 600; }
+#notice { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: #2B2410; color: var(--signal); border: 1px solid #5A4415; padding: 8px 14px; border-radius: 8px; font-size: 13px; opacity: 0; transition: opacity .25s; pointer-events: none; z-index: 20; max-width: calc(100% - 32px); }
+#notice.show { opacity: 1; }
+
+@media (max-width: 1250px) {
+  footer { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 900px) {
+  body { display: block; }
+  main { grid-template-columns: 1fr; }
+  .lane { min-height: 560px; }
+  footer { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><h1>Traffic Hive Live</h1><span>España digital twin · SUMO stepping in real time</span><a href="./">driver phone view: Hive Out replay →</a></div>
+  <span class="pill" id="clock">not running</span>
+  <div class="controls">
+    <label>Vehicles <input id="vehicles" type="number" min="100" max="3000" step="100" value="1000"></label>
+    <label>Seed <input id="seed" type="number" min="1" max="9999" value="11" style="width:64px"></label>
+    <label>Speed
+      <select id="speed">
+        <option value="1">1× (true real time)</option>
+        <option value="5">5×</option>
+        <option value="10" selected>10×</option>
+        <option value="20">20×</option>
+        <option value="40">40×</option>
+      </select>
+    </label>
+    <button class="btn primary" id="start">Start</button>
+    <button class="btn" id="pause" disabled>Pause</button>
+  </div>
+</header>
+
+<div class="layout">
+  <main>
+    <section class="lane" id="lane0">
+      <h2><span class="name">Selfish routing</span><small class="sub">waiting to start</small></h2>
+      <div class="kpis"></div>
+      <div class="mapwrap"><canvas class="map"></canvas><div class="zoom"><button data-z="1.4" aria-label="Zoom in">+</button><button data-z="0.71" aria-label="Zoom out">−</button><button data-z="0" aria-label="Reset view" style="font-size:12px">⤢</button></div></div>
+    </section>
+    <section class="lane" id="lane1">
+      <h2><span class="name">Traffic Hive</span><small class="sub">waiting to start</small></h2>
+      <div class="kpis"></div>
+      <div class="mapwrap"><canvas class="map"></canvas><div class="zoom"><button data-z="1.4" aria-label="Zoom in">+</button><button data-z="0.71" aria-label="Zoom out">−</button><button data-z="0" aria-label="Reset view" style="font-size:12px">⤢</button></div></div>
+    </section>
+  </main>
+
+</div>
+
+<footer>
+  <div class="box">
+    <h3>Traffic Hive vs selfish routing, so far</h3>
+    <div id="delta">—</div>
+    <div id="deltaSub">Total vehicle-hours counts every car in the network or waiting to enter it.</div>
+    <div class="legend">
+      <span><i style="background:var(--c1)"></i>corridor 1</span>
+      <span><i style="background:var(--c2)"></i>corridor 2</span>
+      <span><i style="background:var(--c3)"></i>corridor 3</span>
+      <span><i style="background:var(--rer)"></i>rerouted while driving</span>
+      <span><i style="background:var(--stopped)"></i>stopped</span>
+    </div>
+    <div class="driver"><span id="driverTxt">Click a car to follow one driver in both simulations.</span><button class="btn" id="pRandom" style="padding:3px 10px">Random car</button><button class="btn" id="pClear" style="padding:3px 10px" hidden>Stop following</button></div>
+  </div>
+  <div class="box">
+    <h3>Obstacles · applied to both simulations at the same moment</h3>
+    <div class="seg" id="mode" style="margin-bottom:8px"><button data-m="select" class="on">Click selects a car</button><button data-m="place">Click places an obstacle</button></div>
+    <div class="form">
+      <div class="full types" id="types"></div>
+      <label>Severity
+        <select id="sev"><option value="1">1 · light</option><option value="2">2 · moderate</option><option value="3" selected>3 · heavy</option></select>
+      </label>
+      <label>Lasts
+        <select id="dur"><option value="300">5 min</option><option value="600" selected>10 min</option><option value="900">15 min</option><option value="1000000">until cleared</option></select>
+      </label>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+      <button class="btn warn" id="preset" disabled>Drop the 12 España obstacles</button>
+      <button class="btn" id="clear" disabled>Clear all</button>
+    </div>
+    <div class="hint" id="effect"></div>
+    <ul class="oblist" id="oblist"></ul>
+  </div>
+  <div class="box">
+    <h3>Total vehicle-hours over time (lower is better) · <span style="color:var(--stopped)">━ selfish</span> · <span style="color:var(--c1)">━ Traffic Hive</span></h3>
+    <canvas id="chart"></canvas>
+  </div>
+</footer>
+<div id="notice" role="status"></div>
+
+<script>
+const params = new URLSearchParams(location.search);
+const SERVER = params.get("server") || (location.protocol.startsWith("http") ? location.host : "localhost:8000");
+const HTTP = (location.protocol === "https:" ? "https://" : "http://") + SERVER;
+const WS = (location.protocol === "https:" ? "wss://" : "ws://") + SERVER + "/live/ws";
+const $ = id => document.getElementById(id);
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const COL = { c: [css("--c1"), css("--c2"), css("--c3"), css("--rer")], stopped: css("--stopped"), road: css("--road"), roadMajor: css("--roadMajor") };
+const TYPES = {
+  vendor:       { name: "Vendors",         color: css("--ob-vendor"),       effect: ["curb lane slowed to 60 %", "curb lane slowed to 40 %", "curb lane closed (25 % on one-lane roads)"] },
+  jeepney_stop: { name: "Jeepney stop",    color: css("--ob-jeepney_stop"), effect: ["passing jeepneys stop 15 s", "passing jeepneys stop 30 s", "passing jeepneys stop 60 s"] },
+  enforcer:     { name: "Enforcer",        color: css("--ob-enforcer"),     effect: ["green phases held 1.5× longer", "green phases held 2× longer", "green phases held 2.5× longer"] },
+  stalled:      { name: "Stalled vehicle", color: css("--ob-stalled"),      effect: ["curb lane closed", "curb lane closed", "curb lane closed"] },
+  roadwork:     { name: "Road work",       color: css("--ob-roadwork"),     effect: ["curb lane closed, next lane at 50 %", "curb lane closed, next lane at 50 %", "curb lane closed, next lane at 50 %"] },
+};
+const NAMES = { ue_corridor: "Selfish routing (fastest corridor)", hive_corridor: "Traffic Hive rule",
+  ue_reroute_corridor: "Selfish + app-style rerouting", hive_reroute_corridor: "Traffic Hive + live rerouting" };
+const KPI = [
+  ["vehicle_hours", "vehicle-hours", v => v.toFixed(1)],
+  ["arrived", "finished", v => v],
+  ["running", "on the road", v => v],
+  ["speed_kmh", "avg km/h", v => v.toFixed(1)],
+  ["reroutes", "rerouted", v => v],
+  ["decision_ms", "decision ms / step", v => v.toFixed(1)],
+];
+const fmtT = s => { s = Math.max(0, Math.round(s)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
+const distStr = d => d >= 1000 ? `${(d / 1000).toFixed(1)} km` : `${Math.max(0, Math.round(d / 10) * 10)} m`;
+
+let net = null, roadById = new Map(), ws = null, running = false, paused = false, lastFrame = null;
+let mode = "select", obType = "stalled", followId = null;
+const view = { zoom: 1, cx: 0, cy: 0 };   // shared by both maps: zoom factor and world centre
+const history = [[], []];
+const lanes = [0, 1].map(i => {
+  const el = $("lane" + i);
+  el.querySelector(".kpis").innerHTML = KPI.map(([key, label]) => `<div class="kpi"><b data-k="${key}">—</b><span>${label}</span></div>`).join("");
+  return { el, canvas: el.querySelector("canvas"), base: document.createElement("canvas"), t: null, baseKey: "",
+           prev: null, prevIdx: new Map(), tFrame: 0, dtFrame: 100 };
+});
+
+function notice(msg) { const n = $("notice"); n.textContent = msg; n.classList.add("show"); clearTimeout(n._t); n._t = setTimeout(() => n.classList.remove("show"), 3200); }
+
+// ---------------------------------------------------------------- maps
+function transform(lane) {
+  const dpr = window.devicePixelRatio || 1, W = lane.canvas.width, H = lane.canvas.height, pad = 10 * dpr;
+  const fit = Math.min((W - 2 * pad) / net.bounds.w, (H - 2 * pad) / net.bounds.h);
+  const s = fit * view.zoom;
+  return { s, ox: W / 2 - view.cx * s, oy: H / 2 + view.cy * s, dpr };
+}
+function sizeLane(lane) {
+  const r = lane.canvas.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+  lane.canvas.width = Math.max(1, Math.round(r.width * dpr)); lane.canvas.height = Math.max(1, Math.round(r.height * dpr));
+  lane.base.width = lane.canvas.width; lane.base.height = lane.canvas.height; lane.baseKey = "";
+}
+function paintBase(lane) {
+  if (!net) return;
+  const t = transform(lane), key = `${lane.canvas.width}x${lane.canvas.height}:${t.s}:${t.ox}:${t.oy}`;
+  lane.t = t;
+  if (key === lane.baseKey) return;
+  lane.baseKey = key;
+  const g = lane.base.getContext("2d");
+  g.clearRect(0, 0, lane.base.width, lane.base.height); g.lineCap = "round"; g.lineJoin = "round";
+  const w = Math.min(2.4, Math.max(0.6, view.zoom * 0.7));
+  for (const road of net.roads) {
+    const p = road.p;
+    g.strokeStyle = road.n >= 3 ? COL.roadMajor : COL.road;
+    g.lineWidth = Math.max(1, Math.min(6, road.n * 0.9 * w)) * t.dpr;
+    g.beginPath();
+    for (let i = 0; i < p.length; i += 2) { const x = t.ox + p[i] * t.s, y = t.oy - p[i + 1] * t.s; i ? g.lineTo(x, y) : g.moveTo(x, y); }
+    g.stroke();
+  }
+}
+// Frames arrive once per simulated second. Between two frames each car is
+// drawn part-way along its move (by id), so motion stays smooth at any speed.
+function draw(lane, data, obstacles, alpha = 1) {
+  if (!net) return;
+  paintBase(lane);
+  const c = lane.canvas.getContext("2d"), t = lane.t;
+  c.clearRect(0, 0, lane.canvas.width, lane.canvas.height);
+  c.drawImage(lane.base, 0, 0);
+  if (data && data.follow && data.follow.route) {
+    c.strokeStyle = "rgba(232,230,220,.55)"; c.lineWidth = 3.2 * t.dpr; c.lineCap = "round";
+    for (const id of data.follow.route) { const r = roadById.get(id); if (!r) continue; const p = r.p; c.beginPath(); for (let i = 0; i < p.length; i += 2) { const x = t.ox + p[i] * t.s, y = t.oy - p[i + 1] * t.s; i ? c.lineTo(x, y) : c.moveTo(x, y); } c.stroke(); }
+  }
+  if (data) {
+    const v = data.veh, rad = Math.max(1.6, Math.min(4.5, 1.4 * Math.sqrt(view.zoom) + 0.7)) * t.dpr;
+    const pv = lane.prev, pIdx = lane.prevIdx, ids = data.ids;
+    let fx = null, fy = null;
+    for (let i = 0, j = 0; i < v.length; i += 3, j++) {
+      const code = v[i + 2];
+      let x = v[i], y = v[i + 1];
+      const k = alpha < 1 && pv ? pIdx.get(ids[j]) : undefined;
+      if (k !== undefined) { x = pv[k] + (x - pv[k]) * alpha; y = pv[k + 1] + (y - pv[k + 1]) * alpha; }
+      if (data.follow && ids[j] === data.follow.vid) { fx = x; fy = y; }
+      c.fillStyle = code >= 4 ? COL.stopped : COL.c[code];
+      c.beginPath(); c.arc(t.ox + x * t.s, t.oy - y * t.s, rad, 0, 6.2832); c.fill();
+    }
+    const f = data.follow;
+    if (f && f.state === "driving") {
+      const x = t.ox + (fx ?? f.x) * t.s, y = t.oy - (fy ?? f.y) * t.s;
+      c.strokeStyle = "#FFFFFF"; c.lineWidth = 2.2 * t.dpr; c.beginPath(); c.arc(x, y, 8 * t.dpr, 0, 6.2832); c.stroke();
+    }
+  }
+  for (const o of obstacles || []) {
+    const x = t.ox + o.x * t.s, y = t.oy - o.y * t.s, col = (TYPES[o.type] || TYPES.stalled).color;
+    c.strokeStyle = col; c.lineWidth = 2 * t.dpr;
+    c.beginPath(); c.arc(x, y, 7 * t.dpr, 0, 6.2832); c.stroke();
+    c.fillStyle = col; c.beginPath(); c.arc(x, y, 2.6 * t.dpr, 0, 6.2832); c.fill();
+  }
+}
+function redrawAll() { if (!lastFrame) { lanes.forEach(l => draw(l, null, [])); return; } lastFrame.lanes.forEach((d, i) => lanes[i] && draw(lanes[i], d, lastFrame.obstacles, paused ? 1 : alphaOf(lanes[i]))); }
+const alphaOf = lane => Math.min(1, (performance.now() - lane.tFrame) / lane.dtFrame);
+function animate() {
+  if (lastFrame && !paused) lastFrame.lanes.forEach((d, i) => lanes[i] && draw(lanes[i], lanes[i].data || d, lastFrame.obstacles, alphaOf(lanes[i])));
+  requestAnimationFrame(animate);
+}
+requestAnimationFrame(animate);
+function toWorld(lane, ev) {
+  const r = lane.canvas.getBoundingClientRect(), t = lane.t || transform(lane);
+  return { x: ((ev.clientX - r.left) * t.dpr - t.ox) / t.s, y: -((ev.clientY - r.top) * t.dpr - t.oy) / t.s };
+}
+function nearestCar(data, w, lane) {
+  if (!data) return null;
+  const t = lane.t, v = data.veh, maxD = 14 * t.dpr / t.s;
+  let best = null, bd = maxD;
+  for (let i = 0, j = 0; i < v.length; i += 3, j++) { const d = Math.hypot(v[i] - w.x, v[i + 1] - w.y); if (d < bd) { bd = d; best = data.ids[j]; } }
+  return best;
+}
+
+// ---------------------------------------------------------------- KPIs, chart
+function setKpis(i, d) { for (const [key, , fmt] of KPI) lanes[i].el.querySelector(`[data-k="${key}"]`).textContent = d ? fmt(d[key]) : "—"; }
+function drawChart() {
+  const cv = $("chart"), dpr = window.devicePixelRatio || 1, r = cv.getBoundingClientRect();
+  cv.width = r.width * dpr; cv.height = r.height * dpr;
+  const g = cv.getContext("2d"); g.clearRect(0, 0, cv.width, cv.height);
+  const all = history[0].concat(history[1]); if (all.length < 2) return;
+  const tMax = Math.max(...all.map(p => p[0])), vMax = Math.max(1, ...all.map(p => p[1]));
+  const L = 34 * dpr, B = 16 * dpr, W = cv.width - L - 6 * dpr, H = cv.height - B - 6 * dpr;
+  g.strokeStyle = css("--border"); g.lineWidth = 1; g.beginPath(); g.moveTo(L, 6 * dpr); g.lineTo(L, 6 * dpr + H); g.lineTo(L + W, 6 * dpr + H); g.stroke();
+  g.fillStyle = css("--dim"); g.font = `${11 * dpr}px ${css("--mono")}`;
+  g.fillText(vMax.toFixed(0), 2 * dpr, 14 * dpr); g.fillText("0", 2 * dpr, 6 * dpr + H); g.fillText(`${Math.round(tMax / 60)} min`, L + W - 44 * dpr, cv.height - 3 * dpr);
+  [[history[0], css("--stopped")], [history[1], css("--c1")]].forEach(([pts, col]) => {
+    g.strokeStyle = col; g.lineWidth = 2 * dpr; g.beginPath();
+    pts.forEach(([t, v], j) => { const x = L + (t / tMax) * W, y = 6 * dpr + H - (v / vMax) * H; j ? g.lineTo(x, y) : g.moveTo(x, y); });
+    g.stroke();
+  });
+}
+
+// ---------------------------------------------------------------- followed driver
+function updateDriver(m) {
+  $("pClear").hidden = !followId;
+  if (!followId) { $("driverTxt").textContent = "Click a car to follow one driver in both simulations."; return; }
+  const part = (f, name) => {
+    if (!f) return `${name}: —`;
+    if (f.state === "arrived") return `${name}: <b>arrived in ${fmtT(f.trip_s)}</b>${f.rerouted ? ` (rerouted ${f.rerouted}×)` : ""}`;
+    if (f.state === "driving") return `${name}: <b>${distStr(f.remaining_m)} left</b>, ${Math.round(f.speed_kmh)} km/h${f.street ? " on " + f.street : ""}${f.rerouted ? ", rerouted" : ""}`;
+    return `${name}: ${f.state === "waiting" ? "not departed yet" : "left the network"}`;
+  };
+  $("driverTxt").innerHTML = `Driver ${followId} · ${part(m.lanes[0] && m.lanes[0].follow, "selfish")} · ${part(m.lanes[1] && m.lanes[1].follow, "Hive")}`;
+}
+function follow(vid) {
+  followId = vid; send({ cmd: "follow", vid });
+  if (vid) notice("Following this driver in both simulations (white ring).");
+  if (lastFrame) updateDriver(lastFrame);
+}
+
+// ---------------------------------------------------------------- frames
+function onFrame(m) {
+  lastFrame = m;
+  $("clock").textContent = `t = ${fmtT(m.t)}${paused ? " · paused" : ""}`;
+  m.lanes.forEach((d, i) => {
+    if (!lanes[i]) return;
+    setKpis(i, d);
+    lanes[i].el.querySelector(".sub").textContent = `split ${d.share.map(x => Math.round(x * 100)).join(" / ")} % · stopped ${d.halting} · waiting to enter ${d.pending}`;
+    const lane = lanes[i], now = performance.now(), prevData = lane.data;
+    if (prevData) {
+      lane.prev = prevData.veh;
+      lane.prevIdx = new Map(prevData.ids.map((id, j) => [id, j * 3]));
+      lane.dtFrame = Math.min(1500, Math.max(16, 0.7 * lane.dtFrame + 0.3 * (now - lane.tFrame)));
+    }
+    lane.data = d; lane.tFrame = now;
+    if (Math.round(m.t) % 5 === 0) history[i].push([m.t, d.vehicle_hours]);
+  });
+  if (m.lanes.length === 2) {
+    const [a, b] = m.lanes, diff = a.vehicle_hours - b.vehicle_hours, el = $("delta");
+    const pct = a.vehicle_hours > 0 ? (diff / a.vehicle_hours) * 100 : 0;
+    el.textContent = diff >= 0 ? `${diff.toFixed(1)} vehicle-hours saved (${pct.toFixed(1)} %)` : `${(-diff).toFixed(1)} vehicle-hours behind (${(-pct).toFixed(1)} %)`;
+    el.className = diff >= 0 ? "good" : "bad";
+    $("deltaSub").textContent = `${b.arrived - a.arrived >= 0 ? "+" : ""}${b.arrived - a.arrived} trips finished vs selfish · Hive's decision work: ${b.decision_ms.toFixed(1)} ms on average per simulated half-second (95th percentile ${b.decision_ms_max} ms); real time allows 500 ms`;
+  }
+  renderObsList(m.obstacles);
+  updateDriver(m);
+  if (Math.round(m.t) % 5 === 0) drawChart();
+}
+let obsSig = "";
+function renderObsList(list) {
+  const sig = list.map(o => o.id).join(",");
+  if (sig === obsSig) return; obsSig = sig;
+  $("oblist").innerHTML = list.length ? list.map(o => { const ty = TYPES[o.type] || TYPES.stalled;
+    return `<li><i style="background:${ty.color}"></i><span>${ty.name}${o.label ? " · " + o.label : ""} · severity ${o.severity}${o.end_s < 1e5 ? ` · until ${fmtT(o.end_s)}` : ""}</span><button data-id="${o.id}" aria-label="Remove">✕</button></li>`; }).join("")
+    : `<li style="border:0;color:var(--dim)">No active obstacles.</li>`;
+}
+$("oblist").addEventListener("click", e => { const id = e.target.dataset && e.target.dataset.id; if (id) send({ cmd: "remove", id }); });
+
+// ---------------------------------------------------------------- socket
+function connect() {
+  return new Promise((resolve, reject) => {
+    ws = new WebSocket(WS);
+    ws.onopen = () => resolve();
+    ws.onerror = () => reject(new Error("socket"));
+    ws.onclose = () => { if (running) notice("Connection to the simulation server closed."); setRunning(false); };
+    ws.onmessage = ev => {
+      const m = JSON.parse(ev.data);
+      if (m.type === "frame") onFrame(m);
+      else if (m.type === "notice") notice(m.message);
+      else if (m.type === "status") {
+        if (m.state === "starting") $("clock").textContent = "starting SUMO…";
+        if (m.state === "running") { m.rules.forEach((r, i) => { if (lanes[i]) lanes[i].el.querySelector(".name").textContent = NAMES[r.rule] || r.label; }); $("clock").classList.add("live"); if (followId) send({ cmd: "follow", vid: followId }); }
+        if (m.state === "finished") { notice("Run finished."); setRunning(false); }
+        if (m.state === "error") { notice("Simulation error: " + m.message); setRunning(false); }
+      }
+    };
+  });
+}
+function setRunning(on) {
+  running = on;
+  ["pause", "preset", "clear"].forEach(id => $(id).disabled = !on);
+  $("start").textContent = on ? "Restart" : "Start";
+  if (!on) $("clock").classList.remove("live");
+}
+function send(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
+async function loadNet() {
+  if (net) return;
+  net = await (await fetch(HTTP + "/live/net")).json();
+  roadById = new Map(net.roads.map(r => [r.id, r]));
+  lanes.forEach(sizeLane); redrawAll();
+}
+
+// ---------------------------------------------------------------- controls
+$("start").onclick = async () => {
+  try { await loadNet(); if (!ws || ws.readyState !== 1) await connect(); }
+  catch (e) { notice(`Can't reach the simulation server at ${SERVER}. Start it with: python -m server.app --serve`); return; }
+  history[0].length = 0; history[1].length = 0; paused = false; followId = null; obsSig = "";
+  lanes.forEach(l => { l.data = null; l.prev = null; l.prevIdx = new Map(); });
+  $("pause").textContent = "Pause";
+  send({ cmd: "start", vehicles: +$("vehicles").value, seed: +$("seed").value, speed: +$("speed").value, rules: ["ue_corridor", "hive_reroute_corridor"] });
+  setRunning(true);
+};
+$("pause").onclick = e => { paused = !paused; send({ cmd: paused ? "pause" : "resume" }); e.target.textContent = paused ? "Resume" : "Pause"; };
+$("speed").onchange = e => send({ cmd: "speed", value: +e.target.value });
+$("preset").onclick = () => { send({ cmd: "preset" }); notice("12 España obstacles placed on both simulations."); };
+$("clear").onclick = () => send({ cmd: "clear" });
+$("types").innerHTML = Object.entries(TYPES).map(([k, t]) => `<button data-t="${k}" style="color:${t.color}">${t.name}</button>`).join("");
+function syncTypes() { document.querySelectorAll("#types button").forEach(b => b.classList.toggle("on", b.dataset.t === obType)); $("effect").textContent = `In SUMO: ${TYPES[obType].effect[+$("sev").value - 1]}.`; }
+$("types").onclick = e => { if (e.target.dataset.t) { obType = e.target.dataset.t; setMode("place"); syncTypes(); } };
+$("sev").onchange = syncTypes; syncTypes();
+function setMode(m) { mode = m; document.querySelectorAll("#mode button").forEach(b => b.classList.toggle("on", b.dataset.m === m)); lanes.forEach(l => l.canvas.style.cursor = m === "place" ? "crosshair" : "pointer"); }
+$("mode").onclick = e => { if (e.target.dataset.m) setMode(e.target.dataset.m); };
+setMode("select");
+$("pRandom").onclick = () => { const d = lastFrame && lastFrame.lanes[1]; if (!running || !d || !d.ids.length) { notice("Start the simulation first."); return; } follow(d.ids[Math.floor(Math.random() * d.ids.length)]); };
+$("pClear").onclick = () => follow(null);
+
+// clicks, drag to pan, wheel to zoom (both maps share one view)
+lanes.forEach((lane, li) => {
+  let drag = null;
+  lane.canvas.addEventListener("pointerdown", ev => { drag = { x: ev.clientX, y: ev.clientY, cx: view.cx, cy: view.cy, moved: false }; lane.canvas.setPointerCapture(ev.pointerId); });
+  lane.canvas.addEventListener("pointermove", ev => {
+    if (!drag || !lane.t) return;
+    const dx = ev.clientX - drag.x, dy = ev.clientY - drag.y;
+    if (Math.hypot(dx, dy) > 4) drag.moved = true;
+    if (drag.moved) { view.cx = drag.cx - dx * lane.t.dpr / lane.t.s; view.cy = drag.cy + dy * lane.t.dpr / lane.t.s; redrawAll(); }
+  });
+  lane.canvas.addEventListener("pointerup", ev => {
+    const d = drag; drag = null; if (!d || d.moved || !net) return;
+    const w = toWorld(lane, ev);
+    if (mode === "place") {
+      if (!running) { notice("Start the simulation, then click a road to place an obstacle."); return; }
+      send({ cmd: "obstacle", type: obType, x: w.x, y: w.y, severity: +$("sev").value, duration: +$("dur").value, label: "" });
+      notice(`${TYPES[obType].name} placed on both simulations.`);
+    } else {
+      const vid = lastFrame && nearestCar(lastFrame.lanes[li], w, lane);
+      if (vid) follow(vid); else notice(running ? "No car there. Zoom in with the wheel or + to pick one." : "Start the simulation first.");
+    }
+  });
+  lane.canvas.addEventListener("wheel", ev => {
+    ev.preventDefault(); if (!lane.t) return;
+    const before = toWorld(lane, ev); view.zoom = Math.min(14, Math.max(0.6, view.zoom * (ev.deltaY < 0 ? 1.15 : 1 / 1.15)));
+    lane.t = transform(lane); const after = toWorld(lane, ev); view.cx += before.x - after.x; view.cy += before.y - after.y; redrawAll();
+  }, { passive: false });
+  lane.el.querySelector(".zoom").addEventListener("click", e => {
+    const z = e.target.dataset && e.target.dataset.z; if (z == null) return;
+    if (+z === 0) { view.zoom = 1; view.cx = 0; view.cy = 0; } else view.zoom = Math.min(14, Math.max(0.6, view.zoom * +z));
+    redrawAll();
+  });
+});
+window.addEventListener("resize", () => { lanes.forEach(sizeLane); redrawAll(); drawChart(); });
+loadNet().catch(() => {});
+</script>
+</body>
+</html>

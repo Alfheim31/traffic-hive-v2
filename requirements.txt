@@ -7,3 +7,4 @@ matplotlib>=3.8
 fastapi>=0.110
 uvicorn>=0.27
 httpx>=0.27
+websockets>=12  # live mode (server/live.py) needs WebSocket support in uvicorn

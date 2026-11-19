@@ -324,6 +324,12 @@ def list_runs() -> dict:
 
 # The Hive Out driver view, served from the same origin so it can start runs
 # and load their assets. Open http://<host>:8000/hive-out/
+# Real-time digital-twin mode: live SUMO stepping streamed over a WebSocket
+# (server/live.py), viewed at /hive-out/live.html.
+from server.live import router as live_router  # noqa: E402
+
+api.include_router(live_router)
+
 if HIVE_OUT.exists():
     api.mount("/hive-out", StaticFiles(directory=str(HIVE_OUT), html=True), name="hive-out")
 

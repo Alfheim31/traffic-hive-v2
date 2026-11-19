@@ -115,7 +115,8 @@ def _trips(run_dir: Path) -> dict[str, float]:
 
 
 LABEL = {"ue_corridor": "UE (selfish)", "hive_corridor": "Traffic Hive", "marl_corridor": "Hive (MARL)",
-         "hive_marl_corridor": "Hive + MARL"}
+         "hive_marl_corridor": "Hive + MARL", "ue_reroute_corridor": "UE + live rerouting",
+         "hive_reroute_corridor": "Hive + live rerouting"}
 
 
 def main() -> None:

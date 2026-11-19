@@ -101,6 +101,24 @@ And when we push the network well past saturation (~3,400 vehicles over 25 minut
   <img src="docs/readme/queue.svg" width="100%" alt="Vehicles stopped over time in a stress run: user equilibrium peaks at 1,517, Traffic Hive at 1,127; trips completed 36 percent versus 48 percent" />
 </p>
 
+<details open>
+<summary><b>🚨 Live rerouting: clearing incidents while drivers are on the road</b></summary>
+<br/>
+
+The rule above picks a corridor once, when a car departs. `hive_reroute_corridor` also watches cars already on the road. Every 30 s, a car whose remaining route is badly delayed (1.5× free-flow time and 60 s or more) is offered a faster route. It only switches if that saves at least 15 % and 30 s, it switches at most twice, and never twice within two minutes. Each switch makes the new route look a little busier to the next car, so rerouted drivers don't all pile onto the same detour. Ten seeds, 1,000 vehicles:
+
+| With the 12 España obstacles | UE | Hive rule | UE + live rerouting | **Hive + live rerouting** |
+|---|---|---|---|---|
+| Total vehicle-hours | 162.5 | 162.0 | 132.8 | **132.4** |
+| Vehicles never finished | 62.4 | 57.1 | 9.7 | **6.4** |
+| Time lost per trip | 227 s | 216 s | 214 s | **208 s** |
+
+Against today's selfish routing, Hive + live rerouting cuts total time by **18.5 %** and unfinished trips by **90 %**, in 10 of 10 seeds. Without obstacles it still cuts time lost per trip by 9 % (10 of 10) and total time by 2 % (8 of 10). Against navigation-app style rerouting (`ue_reroute_corridor`), total time is level. Hive is ahead on time lost per trip (7 % less without obstacles, 10 of 10 seeds), on stranded vehicles (a third fewer with obstacles) and on how evenly the roads are used. Method, all measures and paired tests: [`docs/live-rerouting.md`](docs/live-rerouting.md).
+
+**Real time.** `python -m server.app --serve`, then open `http://localhost:8000/hive-out/live.html`. SUMO runs live, with selfish routing and Hive side by side on the same traffic. Click the map to drop an obstacle on both, or drop all twelve España obstacles at once. The page reports each controller's decision time. Hive averaged 28 ms per half-second simulation step, and even its slowest steps (95th percentile) stayed under 275 ms, where real time allows 500 ms.
+
+</details>
+
 <details>
 <summary><b>🤖 Learning the split: Traffic Hive MARL</b></summary>
 <br/>
@@ -375,6 +393,8 @@ Absent vehicles are encoded `x = y = -32768`. `flags` bit 0 marks a stopped vehi
 - [x] Residual MARL (agents adjust the Hive rule's prices), trained 150 iterations
 - [x] Evaluate `hive_marl_corridor` against `hive_corridor` on the held-out seeds
 - [x] Retrain and re-evaluate MARL on the OSM-built network, 10 seeds
+- [x] Live en-route rerouting (`hive_reroute_corridor`), evaluated on 10 seeds against selfish and app-style rerouting
+- [x] Real-time digital-twin mode: live SUMO stream, side-by-side rules, obstacles placed during the run
 - [ ] MARL chapters (methodology and results) finalised in the manuscript
 - [ ] 30-seed paired test of Hive + MARL against the rule (is the 1 % gain with obstacles real?)
 - [ ] MARL results shown in the app's results panel

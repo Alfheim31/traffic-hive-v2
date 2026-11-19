@@ -41,7 +41,7 @@ The first term is cooperative. Summed over agents and epochs, Σ_i Σ_t D_i,t is
 
 The second term is the fairness tolerance of the heuristic rule, applied to expected travel time: probability placed on a corridor expected to take more than (1 + ε) times the fastest one is penalised in proportion to the excess.
 
-When an episode is cut off, each vehicle still in the network adds S_str seconds to its agent's cost (300 s in training phase 1, 600 s in phase 2, about one full trip on this network), so a policy cannot reduce its cost by leaving traffic trapped.
+When an episode is cut off, each vehicle still in the network adds S_str seconds to its agent's cost (S_str = 600 s, about one full trip on this network), so a policy cannot reduce its cost by leaving traffic trapped.
 
 ## Learning algorithm
 
@@ -51,16 +51,27 @@ Advantages are computed per agent with generalised advantage estimation (γ = 0.
 
 L(θ) = −E[min(ρ Â, clip(ρ, 1 − 0.2, 1 + 0.2) Â)] − β_H E[H(π_θ(· | o))],  ρ = π_θ(a | o) / π_θ_old(a | o)
 
-with entropy weight β_H decayed linearly from 0.01 to 0.001 over the planned iterations. The critic minimises the squared error to the GAE return. Both are trained with Adam (critic learning rate 1×10⁻³; actor 1×10⁻³ in phase 1 and 5×10⁻⁴ in phase 2), 8 epochs per batch, minibatches of 512 samples and gradient-norm clipping (0.5 actor, 1.0 critic). The networks and their gradients are implemented in NumPy; the gradients were verified against finite differences (maximum relative error below 10⁻⁶).
+with entropy weight β_H decayed linearly: from 0.02 to 0.003 over the split policy's first 60 iterations and from 0.003 to 0.001 afterwards, and from 0.01 to 0.001 over the residual policy's 150 iterations. The critic minimises the squared error to the GAE return. Both are trained with Adam (actor learning rate 3×10⁻⁴, critic 1×10⁻³), 6 epochs per batch, minibatches of 512 samples and gradient-norm clipping (0.5 actor, 1.0 critic). The networks and their gradients are implemented in NumPy; the gradients were verified against finite differences (maximum relative error below 10⁻⁶).
 
 ## Training episodes
 
-Each training iteration runs four SUMO episodes in parallel with the current policy, then performs one MAPPO update. To prevent the policy from fitting a single scenario, every episode samples its own conditions: 280–420 vehicles over a 300 s demand window (the same arrival rate as 1,000 vehicles over 900 s), a fresh random seed for demand and driver behaviour, and, with probability 0.5, the twelve España obstacles.
+Each training iteration runs four SUMO episodes in parallel with the current policy, then performs one MAPPO update. To prevent the policy from fitting a single scenario, every episode samples its own conditions: a number of vehicles from a range, a fresh random seed for demand and driver behaviour, and, with probability 0.5, the twelve España obstacles. Every episode continues 600 s past the demand window or longer (see below), so that most vehicles finish before the cut-off and the stranded-vehicle cost applies to only a few.
 
-Training ran in two phases. In phase 1 (iterations 1–150) episodes ended 300 s after the demand window closed, with S_str = 300 s. Because trips on this network take about eight minutes, roughly 40% of vehicles were still travelling at the cut-off, so the reward under-counted the cost of slow or congested corridors. Phase 2 (iterations 151–188) resumed from the phase-1 policy with a 600 s tail and S_str = 600 s, which lowered the share of vehicles still travelling at the cut-off to about 6%. Training stopped when the 10-iteration mean return had not improved for 38 iterations.
+All training uses the OSM-built network (`data/net/corridor.net.xml`).
+
+- **Split policy:** 200 iterations on 5-minute demand windows of 280–420 vehicles (the same arrival rate as 1,000 vehicles over 900 s), with a 600 s tail. It was then fine-tuned for 60 iterations on 15-minute windows of 900–1,100 vehicles with a 900 s tail, after evaluation showed that the policy did not transfer from 5-minute to 15-minute runs (Chapter 4).
+- **Residual policy:** 150 iterations directly on 15-minute windows of 900–1,100 vehicles with a 900 s tail.
+
+## Residual variant: learning adjustments to the rule
+
+In the split formulation above the policy must rediscover, from reward alone, what the HPDM formula already encodes. The residual variant keeps the formula in charge. Every vehicle is still assigned by the Traffic Hive rule exactly as in `hive_corridor`: a softmax over marginal cost MC_k = T⁰_k + (n + 1)(T_k − T⁰_k) with η = 0.03, after removing corridors whose expected travel time exceeds (1 + ε) times the fastest. The agent's action changes only the prices the rule sees:
+
+MC'_k = MC_k + δ_ik,  δ_i ∈ {0} ∪ {±30 s, ±90 s on one corridor k}
+
+This gives 13 actions for K = 3. With every δ equal to zero the method is identical to the Hive rule; we verified this by running it with a policy fixed on "no change", which reproduced `hive_corridor` to the vehicle. Training starts with about 40 % of the probability on "no change" (output bias +2), so the rule rather than a random policy is the starting point. Because ε is enforced inside the rule as a hard constraint, the soft fairness penalty is removed from the reward in this mode (λ_f = 0). The observation, reward, critic and learning algorithm are otherwise the same as for the split policy.
 
 ## Evaluation
 
-The trained policy is evaluated in the same pipeline as the other rules, as the `marl_corridor` scenario, with greedy actions (the most probable split). It is compared with selfish user equilibrium (`ue_corridor`) and the heuristic Traffic Hive rule (`hive_corridor`) on identical demand for five held-out seeds, at 1,000 vehicles over 900 s, with and without obstacles, using `pipeline.evaluate`. The seeds and the 900 s demand window are not seen during training.
+The trained policies are evaluated in the same pipeline as the other rules, as the `marl_corridor` (split) and `hive_marl_corridor` (residual) scenarios, with greedy actions (the most probable action). They are compared with selfish user equilibrium (`ue_corridor`) and the heuristic Traffic Hive rule (`hive_corridor`) on identical demand for ten held-out seeds (11, 22, …, 110), at 1,000 vehicles over 900 s, with and without obstacles, using `pipeline.evaluate`. The evaluation seeds are not used in training.
 
 Each evaluation run continues for 1,800 s after the demand window closes, so that nearly every trip completes. The primary measure is total vehicle-hours: the time of all vehicles in the network or waiting to enter it, summed over the run, whether or not they finished. Per-trip averages (time loss, waiting) are reported as secondary measures, because they are taken over completed trips only and favour a rule that leaves more vehicles stranded.

@@ -107,6 +107,31 @@ SCENARIOS: dict[str, Scenario] = {
             "Traffic Hive + MARL",
             reroute_period=10,
         ),
+        # Traffic Hive with damped en-route reassignment: departures are
+        # assigned exactly as hive_corridor, and vehicles already driving
+        # are reconsidered when their remaining route degrades (an incident
+        # or a queue ahead). See HiveRerouteController.
+        Scenario(
+            "hive_reroute_corridor",
+            "actuated",
+            "corridor_reroute",
+            "Traffic Hive (live rerouting)",
+            cost_basis="marginal",
+            epsilon=0.25,
+            reroute_period=10,
+        ),
+        # Baseline for the above: selfish departure choice plus the same
+        # en-route rerouting, so a degraded vehicle is sent to its currently
+        # fastest route (navigation-app behaviour). The two differ only in
+        # how departing vehicles are assigned.
+        Scenario(
+            "ue_reroute_corridor",
+            "actuated",
+            "corridor_ue_reroute",
+            "User equilibrium (live rerouting)",
+            cost_basis="travel_time",
+            reroute_period=10,
+        ),
         Scenario(
             "ue_corridor",
             "actuated",
@@ -342,11 +367,13 @@ class CorridorController:
     # Volume-delay curve. The BPR textbook values (0.15, 4) stay nearly flat
     # until a corridor is close to full, so every vehicle sees the
     # free-flow-fastest corridor as cheapest and herds onto it. The values
-    # fitted to this network by pipeline.calibrate (R^2 = 0.997) respond to
-    # load much earlier; they are read from data/out/calibration.json when
-    # it exists, with the thesis' fitted values as the fallback.
-    BETA = 0.384
-    BPR_N = 1.80
+    # fitted to this network by pipeline.calibrate respond to load much
+    # earlier; they are read from data/out/calibration.json (committed with
+    # the repository), with the same fit on the OSM-built network as the
+    # fallback: beta = 0.304, n = 1.0 (R^2 = 0.962; n sits at the fit's
+    # lower bound).
+    BETA = 0.304422
+    BPR_N = 1.0
     CALIBRATION = Path("data/out/calibration.json")
 
     def __init__(self, scenario: Scenario, seed: int, corridors_path: Path) -> None:
@@ -385,6 +412,9 @@ class CorridorController:
             self._origin_to_group[(g["origin"], g["destination"])] = gi
 
         self._assigned = 0
+        # every distinct edge used by any corridor, measured once per refresh
+        self._edges = sorted({e for group in self.routes for route in group for e in route})
+        self._edge_state: dict[str, tuple[float, float]] = {}
 
     #: cap on one edge's measured travel time, so a single stopped queue
     #: reads as "very slow" rather than as infinity
@@ -404,19 +434,39 @@ class CorridorController:
         underestimates, so a modelled cost stays near free flow and every
         vehicle keeps choosing the shortest corridor.
         """
+        state = self._read_edges(traci)
         for gi, group in enumerate(self.routes):
             for i, route in enumerate(group):
                 total, t_obs = 0, 0.0
                 for edge in route:
-                    try:
-                        total += traci.edge.getLastStepVehicleNumber(edge)
-                        t_obs += min(self.EDGE_TIME_CAP, traci.edge.getTraveltime(edge))
-                    except traci.TraCIException:
-                        continue
+                    if edge in state:
+                        n, tt = state[edge]
+                        total += n
+                        t_obs += min(self.EDGE_TIME_CAP, tt)
                 self._loads[gi][i] = float(total)
                 prev = self._time[gi][i]
                 t_obs = max(t_obs, self.t0[gi][i])
                 self._time[gi][i] = t_obs if prev is None else (1 - self.SMOOTHING) * prev + self.SMOOTHING * t_obs
+
+    def _read_edges(self, traci) -> dict[str, tuple[float, float]]:
+        """Vehicle count and current travel time of every corridor edge.
+
+        The 48 corridors list 2,594 edges but only 728 distinct ones, and
+        asking for each edge of each corridor separately cost over 5,000
+        TraCI round trips per refresh, which dominated the run time of the
+        live mode. Each distinct edge is now asked once per refresh. The
+        values are the same calls as before, so results do not change.
+        (A subscription would avoid even these calls, but its reply has to
+        be parsed on every simulation step, which costs more than it saves.)
+        """
+        state: dict[str, tuple[float, float]] = {}
+        for edge in self._edges:
+            try:
+                state[edge] = (traci.edge.getLastStepVehicleNumber(edge), traci.edge.getTraveltime(edge))
+            except traci.TraCIException:
+                continue
+        self._edge_state = state
+        return state
 
     def _travel_times(self, gi: int) -> list[float]:
         """Current expected travel time per corridor (measured, smoothed)."""
@@ -463,7 +513,7 @@ class CorridorController:
         costs = self._costs(gi)
         indices = list(range(len(costs)))
 
-        if self.scenario.routing == "corridor_ue":
+        if self.scenario.routing.startswith("corridor_ue"):
             # Selfish: always the cheapest corridor by travel time. Produces
             # the herding the cooperative rule is meant to avoid.
             pick = min(indices, key=lambda i: costs[i])
@@ -534,6 +584,130 @@ class CorridorController:
             "share": [round(c / total, 4) for c in merged],
             "per_origin": self._counts,
         }
+
+
+class HiveRerouteController(CorridorController):
+    """Traffic Hive plus damped en-route reassignment.
+
+    Departure-time assignment is unchanged (the parent class). Every
+    REVIEW_S seconds the controller also looks at vehicles already on the
+    road. A vehicle is a candidate when the measured travel time of the
+    rest of its route exceeds its free-flow time by DEGRADED_RATIO and by at
+    least DEGRADED_S seconds, which is what an incident or a spill-back
+    ahead of it looks like. A fraction DAMPING of the candidates is
+    reconsidered per review. A reconsidered vehicle is moved only if the
+    new route saves at least MIN_GAIN of its remaining time and MIN_GAIN_S
+    seconds, at most MAX_SWITCHES times and not again within COOLDOWN_S, so
+    drivers are not sent back and forth, and each switch is charged to the
+    edges it now uses, so later vehicles in the same review see them as
+    busier. Those rules already stop the route flapping of naive dynamic
+    rerouting, so thinning the candidates further only delays the response
+    to an incident: on 10 seeds with the 12 España obstacles, DAMPING = 0.3,
+    0.6 and 1.0 gave 137.3, 133.4 and 132.4 total vehicle-hours.
+    """
+
+    REVIEW_S = 30
+    DEGRADED_RATIO = 1.5
+    DEGRADED_S = 60.0
+    DAMPING = 1.0
+    MIN_GAIN = 0.15
+    MIN_GAIN_S = 30.0
+    COOLDOWN_S = 120.0
+    MAX_SWITCHES = 2
+
+    def __init__(self, scenario: Scenario, seed: int, corridors_path: Path) -> None:
+        super().__init__(scenario, seed, corridors_path)
+        self._switches: dict[str, int] = {}
+        self._last_switch: dict[str, float] = {}
+        self._saved_s: dict[str, float] = {}   # estimated seconds saved per rerouted vehicle
+        self._free: dict[str, float] = {}
+        self.reroutes = 0
+        self.reviews = 0
+        self.review_ms: list[float] = []
+
+    def _free_time(self, traci, edge: str) -> float:
+        t = self._free.get(edge)
+        if t is None:
+            try:
+                lane = f"{edge}_0"
+                t = traci.lane.getLength(lane) / max(1.0, traci.lane.getMaxSpeed(lane))
+            except traci.TraCIException:
+                t = 0.0
+            self._free[edge] = t
+        return t
+
+    def _review(self, traci, now: float) -> None:
+        import time as _time
+        start = _time.perf_counter()
+        # reviews fall on refresh steps (every 30 s vs every 10 s), so the
+        # corridor edges were measured by refresh_loads in this same step;
+        # other edges are asked for
+        cache: dict[str, float] = {e: min(self.EDGE_TIME_CAP, tt) for e, (_, tt) in self._edge_state.items()}
+
+        def edge_time(e: str) -> float:
+            if e not in cache:
+                try:
+                    cache[e] = min(self.EDGE_TIME_CAP, traci.edge.getTraveltime(e))
+                except traci.TraCIException:
+                    cache[e] = 0.0
+            return cache[e]
+
+        for vid in traci.vehicle.getIDList():
+            if self._switches.get(vid, 0) >= self.MAX_SWITCHES:
+                continue
+            if now - self._last_switch.get(vid, -1e9) < self.COOLDOWN_S:
+                continue
+            try:
+                route = traci.vehicle.getRoute(vid)
+                idx = traci.vehicle.getRouteIndex(vid)
+            except traci.TraCIException:
+                continue
+            rest = route[idx:]
+            if len(rest) < 3 or rest[0].startswith(":"):
+                continue
+            t_rest = sum(edge_time(e) for e in rest)
+            t_free = sum(self._free_time(traci, e) for e in rest)
+            if t_rest < self.DEGRADED_RATIO * t_free or t_rest - t_free < self.DEGRADED_S:
+                continue
+            if self.rng.random() > self.DAMPING:
+                continue
+            try:
+                traci.vehicle.rerouteTraveltime(vid, currentTravelTimes=True)
+                new = traci.vehicle.getRoute(vid)
+                new_rest = new[traci.vehicle.getRouteIndex(vid):]
+            except traci.TraCIException:
+                continue
+            t_new = sum(edge_time(e) for e in new_rest)
+            if t_new <= t_rest * (1 - self.MIN_GAIN) and t_rest - t_new >= self.MIN_GAIN_S:
+                self._switches[vid] = self._switches.get(vid, 0) + 1
+                self._last_switch[vid] = now
+                self._saved_s[vid] = self._saved_s.get(vid, 0.0) + (t_rest - t_new)
+                self.reroutes += 1
+                # charge the switch to the edges it now uses, so the next
+                # vehicle reviewed this round sees them as a little busier
+                for e in new_rest:
+                    cache[e] = edge_time(e) + 2.0
+            else:
+                try:
+                    traci.vehicle.setRoute(vid, list(rest))
+                except traci.TraCIException:
+                    pass
+        self.reviews += 1
+        self.review_ms.append((_time.perf_counter() - start) * 1000)
+
+    def step(self, traci, t: int) -> None:
+        super().step(traci, t)
+        now = traci.simulation.getTime()
+        if t % self.REVIEW_S == 0 and now - t < 0.25:
+            self._review(traci, now)
+
+    def summary(self) -> dict:
+        s = super().summary()
+        ms = sorted(self.review_ms)
+        s.update({"reroutes": self.reroutes, "reviews": self.reviews,
+                  "review_ms_median": round(ms[len(ms) // 2], 2) if ms else None,
+                  "review_ms_p95": round(ms[int(len(ms) * 0.95)], 2) if ms else None})
+        return s
 
 
 class MarlController:
@@ -881,6 +1055,8 @@ def run(
             controller = MarlController(seed, corridors_path, horizon, routes)
         elif scenario.routing == "corridor_hive_marl":
             controller = MarlController(seed, corridors_path, horizon, routes, residual=True)
+        elif scenario.routing in ("corridor_reroute", "corridor_ue_reroute"):
+            controller = HiveRerouteController(scenario, seed, corridors_path)
         elif scenario.routing.startswith("corridor"):
             controller = CorridorController(scenario, seed, corridors_path)
         else:
